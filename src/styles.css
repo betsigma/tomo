@@ -1,0 +1,627 @@
+/* styles.css
+   ---------------------------------------------------------------------------
+   All widget styling. Colours are defined ONCE as CSS variables, then swapped
+   for dark mode. The palette comes from the app icon: a pastel pink planner
+   with a deep plum outline.
+   --------------------------------------------------------------------------- */
+
+/* ---------- FONTS (vendored locally so the app works offline) ---------- */
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("vendor/fonts/Nunito-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("vendor/fonts/Nunito-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("vendor/fonts/Nunito-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("vendor/fonts/Nunito-800.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pixelify Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("vendor/fonts/PixelifySans-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pixelify Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("vendor/fonts/PixelifySans-600.woff2") format("woff2");
+}
+
+/* ---------- LIGHT THEME (default) ---------- */
+:root {
+  --bg:        #fff3f7;   /* light pink background */
+  --panel:     #fffafc;   /* cards */
+  --text:      #6b2d4f;   /* deep plum (text + thin borders, never black) */
+  --muted:     #a5708f;   /* soft plum for secondary text */
+  --border:    rgba(107, 45, 79, 0.22);
+  --outline:   #6b2d4f;   /* strong plum outline for chips/buttons */
+  --accent:    #f8a3c4;   /* main pink */
+  --accent-2:  #e07aa6;   /* deeper pink for hover/active */
+  --danger:    #d9536f;   /* berry red */
+  --hover:     #ffe3ee;
+  --cal-hover: #ffe9f3;
+  --today:     #ffe0ee;
+  --shadow:    rgba(107, 45, 79, 0.12);
+
+  /* icon palette */
+  --pink:     #f8a3c4;
+  --lavender: #d4bfff;
+  --butter:   #fbe8a0;
+  --blue:     #afc6ff;
+
+  /* event source colours (Canvas = pink, Gmail = lavender, Discord = blue, Manual = yellow) */
+  --src-manual:  #fbe8a0;
+  --src-canvas:  #f8a3c4;
+  --src-gmail:   #d4bfff;
+  --src-discord: #afc6ff;
+}
+
+/* ---------- DARK THEME ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #2a1622;
+    --panel:     #38202f;
+    --text:      #ffe9f2;
+    --muted:     #cda6ba;
+    --border:    rgba(255, 233, 242, 0.18);
+    --outline:   #f8a3c4;
+    --accent:    #f8a3c4;
+    --accent-2:  #ffb9d4;
+    --danger:    #ff7d95;
+    --hover:     #4a2a3c;
+    --cal-hover: #4a2a3c;
+    --today:     #5a3348;
+    --shadow:    rgba(0, 0, 0, 0.35);
+  }
+}
+html.theme-dark {
+  --bg:#2a1622; --panel:#38202f; --text:#ffe9f2; --muted:#cda6ba;
+  --border:rgba(255,233,242,0.18); --outline:#f8a3c4; --accent:#f8a3c4; --accent-2:#ffb9d4;
+  --danger:#ff7d95; --hover:#4a2a3c; --cal-hover:#4a2a3c; --today:#5a3348; --shadow:rgba(0,0,0,0.35);
+}
+html.theme-light {
+  --bg:#fff3f7; --panel:#fffafc; --text:#6b2d4f; --muted:#a5708f;
+  --border:rgba(107,45,79,0.22); --outline:#6b2d4f; --accent:#f8a3c4; --accent-2:#e07aa6;
+  --danger:#d9536f; --hover:#ffe3ee; --cal-hover:#ffe9f3; --today:#ffe0ee; --shadow:rgba(107,45,79,0.12);
+}
+
+/* Reset + full-height layout. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Nunito", "Quicksand", "Segoe UI", system-ui, "Segoe UI Emoji", sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.hidden { display: none !important; }
+
+/* Rounded font for body text; pixel font only for the header + small labels. */
+.pixel, .title-text, .section-title, .settings-section h4, .panel-label,
+.legend, .statusbar, .email-event, .discord-event {
+  font-family: "Pixelify Sans", "Nunito", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.widget {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+/* ---------- TITLE BAR (drag handle) ---------- */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: linear-gradient(180deg, #ffd7e7, #ffc4dd);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;   /* makes the bar draggable */
+}
+html.theme-dark .titlebar { background: linear-gradient(180deg, #4a2740, #3a1e30); }
+.title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.title-text { font-size: 16px; font-weight: 600; color: var(--text); }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px var(--outline); }
+.controls { display: flex; gap: 4px; }
+
+/* ---------- BUTTONS ---------- */
+.btn {
+  -webkit-app-region: no-drag;   /* buttons must be clickable, not drag handles */
+  border: none;
+  background: transparent;
+  color: var(--text);
+  width: 28px; height: 26px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: background 150ms ease, color 150ms ease, box-shadow 180ms ease, transform 150ms ease;
+}
+.btn:hover { background: var(--hover); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn.danger:hover { background: var(--danger); color: #fff; }
+.btn.active { background: var(--accent); color: #fff; box-shadow: 0 0 0 1px var(--outline); }
+.btn.small { width: auto; padding: 5px 12px; font-size: 12px; border-radius: 999px; }
+.btn.primary { background: var(--accent); color: #fff; box-shadow: 0 0 0 1px var(--outline); }
+.btn.primary:hover { background: var(--accent-2); filter: none; }
+.btn { white-space: nowrap; }
+
+/* ---------- BODY ---------- */
+.body { flex: 1; overflow-y: auto; padding: 12px; }
+
+.section-title {
+  font-size: 13px;
+  text-transform: none;
+  color: var(--text);
+  margin: 12px 0 6px;
+}
+.section-title:first-child { margin-top: 0; }
+
+/* ---------- TO-DO LIST ---------- */
+.todo-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+
+.todo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 2px 6px var(--shadow);
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 150ms ease;
+}
+.todo:hover { box-shadow: 0 4px 12px var(--shadow); transform: translateY(-1px); }
+.todo input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; flex: none; accent-color: var(--accent); }
+.todo .todo-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.todo .todo-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo .todo-sub { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.todo .todo-loc { font-size: 11px; color: var(--muted); }
+.todo .todo-meta { font-size: 11px; color: var(--muted); flex: none; }
+.todo.done .todo-text { text-decoration: line-through; color: var(--muted); }
+.todo.done .todo-text::after { content: " 💗"; text-decoration: none; }
+.todo.overdue .todo-meta { color: var(--src-canvas); font-weight: 700; }
+
+.todo .course-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text);
+  flex: none;
+}
+
+.todo .del {
+  border: none; background: transparent; color: var(--muted);
+  cursor: pointer; font-size: 14px; flex: none; border-radius: 999px;
+  width: 22px; height: 22px;
+  transition: color 150ms ease, background 150ms ease;
+}
+.todo .del:hover { color: var(--danger); background: var(--hover); }
+
+.empty-note { color: var(--muted); font-size: 12px; padding: 4px 2px; }
+
+/* ---------- EMAIL LIST ---------- */
+.email-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.email {
+  display: flex;
+  flex-direction: column;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 2px 6px var(--shadow);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 150ms ease;
+}
+.email:hover { border-color: var(--accent); box-shadow: 0 4px 12px var(--shadow); transform: translateY(-1px); }
+.email .email-from {
+  font-weight: 700;
+  font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.email .email-subject {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.email .email-event {
+  font-size: 11px;
+  color: var(--src-gmail);
+  margin-top: 2px;
+}
+
+/* ---------- DISCORD LIST ---------- */
+.discord-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.discord {
+  display: flex;
+  flex-direction: column;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--src-discord);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 2px 6px var(--shadow);
+  min-width: 0;
+}
+.discord .discord-author {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.discord .discord-text {
+  font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.discord .discord-event { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* Small colored dot showing a to-do's source */
+.todo .src-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--border); }
+
+/* ---------- ADD FORM ---------- */
+.add-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: center;
+}
+.add-form input[type="text"] { flex: 1; min-width: 0; }
+.add-form input[type="date"] { width: 130px; }
+
+input[type="text"], input[type="date"], input[type="time"], input[type="number"], input[type="password"], select {
+  -webkit-app-region: no-drag;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--hover); }
+
+/* ---------- LEGEND ---------- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+.legend span {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--border);
+}
+.legend .swatch {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  margin-right: 5px;
+}
+.swatch.manual  { background: var(--src-manual); }
+.swatch.canvas  { background: var(--src-canvas); }
+.swatch.gmail   { background: var(--src-gmail); }
+.swatch.discord { background: var(--src-discord); }
+
+/* ---------- STATUS BAR ---------- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- MODAL ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(107, 45, 79, 0.35);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  z-index: 50;
+}
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  width: min(300px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);   /* never taller than the window */
+  overflow-y: auto;                 /* scroll inside the card instead */
+  box-shadow: 0 14px 40px rgba(107, 45, 79, 0.28);
+}
+.modal-card h3 { font-size: 16px; margin-bottom: 12px; }
+.field { display: block; margin-bottom: 10px; }
+.field span { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.field input { width: 100%; }
+.field select { width: 100%; }
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  /* Keep the buttons visible even while the settings scroll. */
+  position: sticky;
+  bottom: -16px;
+  margin: 6px -16px -16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.modal-actions .spacer { flex: 1; }
+
+/* Settings modal extras */
+.settings-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+.settings-head img {
+  width: 32px; height: 32px; border-radius: 8px;
+  image-rendering: pixelated;         /* keep the pixel art crisp */
+  box-shadow: 0 2px 6px var(--shadow);
+}
+.settings-head .settings-title { font-family: "Pixelify Sans", "Nunito", sans-serif; font-size: 18px; }
+.modal-card.wide { width: min(360px, calc(100vw - 28px)); }
+.settings-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+.settings-section:first-of-type { border-top: none; margin-top: 0; }
+.settings-section h4 { font-size: 13px; color: var(--text); margin-bottom: 6px; }
+.hint { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+.settings-section input[type="password"],
+.settings-section input[type="text"],
+.settings-section select {
+  width: 100%;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  margin-bottom: 6px;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.settings-section input[type="password"]:focus,
+.settings-section input[type="text"]:focus,
+.settings-section select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--hover); }
+.row { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.row .spacer { flex: 1; }
+.field-inline { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.field-inline input { width: 70px; }
+.field-inline input[type="checkbox"] { width: auto; }
+
+/* AI test output */
+.llm-output {
+  margin-top: 8px; max-height: 200px; overflow: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word;
+}
+
+
+/* ---------- FULLCALENDAR THEME OVERRIDES ----------
+   FullCalendar ships its own CSS. We recolor it to match our theme. */
+#calendar { font-size: 12px; color: var(--text); }
+
+/* Target the inner .fc element — that is where FullCalendar's own variables live. */
+#calendar .fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--panel);
+  --fc-neutral-bg-color: var(--panel);
+  --fc-today-bg-color: var(--today);
+  --fc-button-bg-color: transparent;
+  --fc-button-border-color: transparent;
+  --fc-button-text-color: var(--text);
+  --fc-button-hover-bg-color: var(--hover);
+  --fc-button-hover-border-color: transparent;
+  --fc-button-active-bg-color: var(--accent);
+  --fc-button-active-border-color: var(--accent);
+}
+#calendar .fc-toolbar-title { font-size: 15px; font-family: "Pixelify Sans", "Nunito", sans-serif; color: var(--text); }
+#calendar .fc-button { box-shadow: none !important; border-radius: 999px !important; transition: background 180ms ease; }
+#calendar .fc-col-header-cell { background: var(--panel); }
+#calendar .fc-scrollgrid { border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+
+/* --- Day cells: fixed, uniform height so every cell is a big click target --- */
+#calendar .fc-daygrid-day { cursor: pointer; }
+#calendar .fc-daygrid-day-frame { min-height: 84px; overflow: hidden; }
+#calendar .fc-daygrid-day-top { min-height: 18px; }
+#calendar .fc-daygrid-day-number { color: var(--text); padding: 2px 6px; cursor: pointer; }
+#calendar .fc-daygrid-day-events { margin: 0; min-height: 0; }
+
+/* --- Chips: one line, never shrink below 20px, ellipsis, clickable --- */
+#calendar .fc-daygrid-event-harness { margin-top: 1px; }
+#calendar .fc-daygrid-event {
+  min-height: 20px; height: 20px; box-sizing: border-box;
+  font-size: 11px; line-height: 18px; font-weight: 600;
+  padding: 0 6px; border: none; border-radius: 999px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+#calendar .fc-daygrid-event:hover { transform: translateY(-1px); filter: brightness(0.96); }
+#calendar .fc-daygrid-event .fc-event-main,
+#calendar .fc-daygrid-event .fc-event-title,
+#calendar .fc-daygrid-event .fc-event-time {
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+/* "+N more" is a real, comfortably-tappable target (>= 22px). */
+#calendar .fc-daygrid-more-link {
+  color: var(--accent-2); font-weight: 700;
+  min-height: 22px; line-height: 22px; padding: 0 6px;
+  display: block; border-radius: 999px;
+}
+#calendar .fc-daygrid-more-link:hover { background: var(--hover); }
+
+/* --- Compact mode (narrow widget): dots + count, day tap opens the list --- */
+#calendar .cal-dots { display: none; }
+#calendar.cal-compact .fc-daygrid-event-harness,
+#calendar.cal-compact .fc-daygrid-more-link { display: none !important; }
+#calendar.cal-compact .fc-daygrid-day-frame { min-height: 62px; }
+#calendar.cal-compact .cal-dots {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 3px;
+  padding: 2px 6px;
+}
+#calendar .cal-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1px var(--border); }
+#calendar .cal-count { font-size: 10px; font-weight: 700; color: var(--muted); }
+
+/* ---------- DETAILS PANEL / DAY LIST / TOAST / PREVIEW TABLE ---------- */
+.meta-row { display: flex; gap: 8px; font-size: 12px; padding: 3px 0; }
+.meta-row .k { color: var(--muted); width: 70px; flex: none; }
+.meta-row .v { flex: 1; min-width: 0; word-break: break-word; }
+.panel-label { font-size: 12px; color: var(--text); margin: 10px 0 4px; }
+.panel-text { font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.field textarea {
+  width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 12px; resize: vertical;
+}
+
+.day-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.day-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px;
+  background: none; border: 1px solid transparent; color: var(--text); text-align: left;
+  border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.day-item:hover { background: var(--hover); border-color: var(--border); }
+.di-time { font-size: 11px; color: var(--muted); flex: none; width: 110px; }
+.di-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-item .src-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 28px);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+  padding: 8px 14px; font-size: 12px; box-shadow: 0 10px 28px rgba(107, 45, 79, 0.3);
+  z-index: 70;
+}
+#toast-msg { flex: 1; min-width: 0; }
+
+.mini-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.mini-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.mini-item .mi-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.mini-item .mi-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.table-wrap { max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+.preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.preview-table th, .preview-table td {
+  text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border);
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top;
+}
+.preview-table th { position: sticky; top: 0; background: var(--panel); color: var(--text); font-weight: 600; }
+.preview-table td.yes { color: var(--src-canvas); font-weight: 700; }
+.preview-table td.no { color: var(--muted); }
+.preview-table tr.untrusted td { opacity: 0.55; }
+
+/* ---------- LINKS VIEW ---------- */
+.links-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.links-head .section-title { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.chip {
+  -webkit-app-region: no-drag;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.chip:hover { background: var(--hover); }
+.chip.active { background: var(--accent); color: #fff; border-color: var(--outline); }
+
+.link-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.link-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--panel); box-shadow: 0 2px 6px var(--shadow);
+  cursor: pointer; min-width: 0;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 150ms ease;
+}
+.link-item:hover { border-color: var(--accent); box-shadow: 0 4px 12px var(--shadow); transform: translateY(-1px); }
+.link-item .link-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.link-item .link-title { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-item .link-url { font-size: 11px; color: var(--accent-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-item .link-meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-item .del {
+  border: none; background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 14px; flex: none; border-radius: 999px; width: 22px; height: 22px;
+  transition: color 150ms ease, background 150ms ease;
+}
+.link-item .del:hover { color: var(--danger); background: var(--hover); }
+
+/* ---------- RECURRENCE CONTROLS (event modal) ---------- */
+.weekdays { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.weekdays label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text); }
+.end-row { margin-bottom: 8px; }
+.end-row select { width: auto; }
+
+/* ---------- CALENDAR CHIP WITH LOCATION ---------- */
+/* Location is shown only in the details panel now, not inside the grid cell. */
+
+/* ---------- DEADLINE URGENCY ---------- */
+.list-note { font-size: 11px; font-weight: 800; color: var(--danger); letter-spacing: 0.02em; margin: 2px 0; }
+.todo.due-soon .todo-meta { color: var(--accent-2); font-weight: 700; }
+.todo.due-today .todo-meta { color: #c8487f; font-weight: 800; }
+.todo.due-today { border-color: var(--accent-2); }
+
+/* ---------- FOCUS TAB: only the widget-side bits (the pomodoro itself is
+   styled by the scoped focus/focus.css, so nothing here leaks into it) ---------- */
+.compact-timer {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); box-shadow: 0 2px 6px var(--shadow);
+  font-size: 12px; color: var(--text);
+}
+.compact-timer #compact-timer-time {
+  font-family: "Pixelify Sans", "Nunito", sans-serif;
+  font-size: 14px; font-weight: 700; margin-left: auto;
+}
+.todo-pomo { font-size: 11px; color: var(--accent-2); font-weight: 700; flex: none; }

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<!--
+  index.html
+  The widget's visible face.
+  Stage 2 adds: a compact/expanded toggle, a FullCalendar month view, an
+  add/edit event modal, and a to-do list with checkboxes.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Safety rule: only our own local files may run/load. No remote scripts. -->
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schedule</title>
+  <link rel="icon" href="icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- The embedded pomodoro (patmodoro): local fonts + scoped CSS -->
+  <link rel="stylesheet" href="focus/assets/focus-fonts.css" />
+  <link rel="stylesheet" href="focus/focus.css" />
+</head>
+<body>
+  <div class="widget">
+
+    <!-- ================= TITLE BAR ================= -->
+    <header class="titlebar">
+      <div class="title">
+        <span class="dot"></span>
+        <span class="title-text">&#127872; Schedule</span>
+      </div>
+      <div class="controls">
+        <!-- Switch between compact (today) and expanded (calendar) -->
+        <button id="viewToggle" class="btn" title="Expand to calendar">&#9638;</button>
+        <button id="linksBtn" class="btn" title="Links &amp; details">&#128279;</button>
+        <button id="focusBtn" class="btn" title="Focus timer">&#127813;</button>
+        <button id="settingsBtn" class="btn" title="Settings">&#9881;</button>
+        <button id="pin"   class="btn" title="Toggle always-on-top">&#128204;</button>
+        <button id="theme" class="btn" title="Toggle light / dark">&#127769;</button>
+        <button id="min"   class="btn" title="Minimize">&mdash;</button>
+        <button id="close" class="btn danger" title="Close">&#10005;</button>
+      </div>
+    </header>
+
+    <!-- ================= BODY ================= -->
+    <main class="body">
+
+      <!-- ---------- COMPACT VIEW: today's tasks + next 3 deadlines ---------- -->
+      <section id="view-compact" class="view">
+        <div id="compact-timer" class="compact-timer hidden">
+          <span id="compact-timer-label">&#127813; Focus</span>
+          <span id="compact-timer-time">25:00</span>
+          <button id="compact-timer-toggle" class="btn small">Start</button>
+        </div>
+        <h3 class="section-title">&#11088; Today</h3>
+        <ul id="today-list" class="todo-list"></ul>
+
+        <h3 class="section-title">Next deadlines</h3>
+        <ul id="upcoming-list" class="todo-list"></ul>
+
+        <h3 class="section-title">Important emails</h3>
+        <ul id="email-list-compact" class="email-list"></ul>
+
+        <h3 class="section-title">Discord</h3>
+        <ul id="discord-list-compact" class="discord-list"></ul>
+
+        <!-- Add a task -->
+        <form class="add-form todo-form">
+          <input class="todo-title" type="text" placeholder="Add a task&hellip;" />
+          <input class="todo-due" type="date" title="Due date (optional)" />
+          <button type="submit" class="btn small primary">Add</button>
+        </form>
+      </section>
+
+      <!-- ---------- EXPANDED VIEW: month calendar + all tasks ---------- -->
+      <section id="view-expanded" class="view hidden">
+        <div id="calendar"></div>
+
+        <div class="legend">
+          <span><i class="swatch manual"></i>Manual</span>
+          <span><i class="swatch canvas"></i>Canvas</span>
+          <span><i class="swatch gmail"></i>Gmail</span>
+          <span><i class="swatch discord"></i>Discord</span>
+        </div>
+
+        <h3 class="section-title">All tasks</h3>
+        <ul id="all-list" class="todo-list"></ul>
+
+        <h3 class="section-title">Important emails</h3>
+        <ul id="email-list" class="email-list"></ul>
+
+        <h3 class="section-title">Discord</h3>
+        <ul id="discord-list" class="discord-list"></ul>
+
+        <form class="add-form todo-form">
+          <input class="todo-title" type="text" placeholder="Add a task&hellip;" />
+          <input class="todo-due" type="date" title="Due date (optional)" />
+          <button type="submit" class="btn small primary">Add</button>
+        </form>
+      </section>
+
+      <!-- ---------- LINKS VIEW: saved links & details ---------- -->
+      <section id="view-links" class="view hidden">
+        <div class="links-head">
+          <h3 class="section-title">&#128279; Links &amp; details</h3>
+          <button id="link-add" class="btn small primary">+ Add link</button>
+        </div>
+
+        <div id="link-chips" class="chips"></div>
+
+        <ul id="link-list" class="link-list"></ul>
+      </section>
+
+      <!-- ---------- FOCUS VIEW: the original patmodoro app, embedded ---------- -->
+      <section id="view-focus" class="view hidden">
+        <div class="focus-app">
+          <div class="app-container">
+            <div class="app-window">
+              <img src="focus/assets/images/frame-border.png" class="frame-overlay" alt="" />
+
+              <!-- TIMER (the only panel; the widget's Settings holds the lengths) -->
+              <div class="tab-panel" id="timer-panel">
+                <div class="tomato-wrap">
+                  <img src="focus/assets/images/tomato.png" class="tomato-img" alt="tomato" />
+                  <div id="timer">25:00</div>
+                </div>
+                <div class="button-row">
+                  <button id="startPauseBtn" class="img-btn">
+                    <img id="startImg" src="focus/assets/images/start-btn.png" alt="Start" />
+                    <img id="pauseImg" src="focus/assets/images/pause-btn.png" alt="Pause" class="hidden" />
+                  </button>
+                  <button id="resetBtn" class="img-btn"><img src="focus/assets/images/reset-btn.png" alt="Reset" /></button>
+                </div>
+                <div class="focus-on-row">
+                  <label for="focusOn">Focus on</label>
+                  <select id="focusOn"></select>
+                </div>
+              </div>
+
+              <!-- music player panel -->
+              <div class="player-panel">
+                <div class="player-title"><span class="music-icon">&#9835;</span> <span id="trackName">#1</span> <span class="music-icon">&#9835;</span></div>
+
+                <div class="player-bar">
+                  <button id="shuffleBtn" class="img-btn mode-btn" title="shuffle">
+                    <img src="focus/assets/images/shuffle-btn.png" alt="shuffle" />
+                  </button>
+                  <button id="prevBtn" class="img-btn nav-btn" title="previous">
+                    <img src="focus/assets/images/prev-btn.png" alt="previous" />
+                  </button>
+                  <button id="playBtn" class="img-btn" title="play">
+                    <img id="playIcon" src="focus/assets/images/music-play.png" alt="play" />
+                    <img id="pauseIcon" src="focus/assets/images/music-pause.png" alt="pause" class="hidden" />
+                  </button>
+                  <button id="nextBtn" class="img-btn nav-btn" title="next">
+                    <img src="focus/assets/images/next-btn.png" alt="next" />
+                  </button>
+                  <button id="loopBtn" class="img-btn mode-btn" title="loop">
+                    <img src="focus/assets/images/loop-btn.png" alt="loop" />
+                  </button>
+                </div>
+
+                <div class="progress-row">
+                  <span id="currentTime">0:00</span>
+                  <div class="progress-wrap" id="progressWrap">
+                    <img src="focus/assets/images/progress-track.png" class="progress-track" alt="" />
+                    <div class="progress-fill" id="progressFill"></div>
+                    <img src="focus/assets/images/progress-thumb.png" class="progress-thumb" id="progressThumb" alt="" />
+                  </div>
+                  <span id="durationTime">0:00</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+        <audio id="bgMusic"></audio>
+      </section>
+
+    </main>
+
+    <!-- ================= STATUS BAR ================= -->
+    <footer class="statusbar">
+      <span id="status">Ready</span>
+      <button id="refresh" class="btn small" title="Refresh now">&#10024; Refresh</button>
+    </footer>
+
+    <!-- ================= EVENT MODAL (hidden by default) ================= -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="modal-title">Add event</h3>
+
+        <label class="field">
+          <span>Title</span>
+          <input id="ev-title" type="text" placeholder="e.g. Study group" />
+        </label>
+
+        <label class="field">
+          <span>Date</span>
+          <input id="ev-date" type="date" />
+        </label>
+
+        <label class="field">
+          <span>Time (optional)</span>
+          <input id="ev-time" type="time" />
+        </label>
+
+        <label class="field">
+          <span>Repeats</span>
+          <select id="ev-repeat">
+            <option value="none">Does not repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </label>
+
+        <div id="ev-weekdays" class="weekdays hidden">
+          <label><input type="checkbox" value="0" /> Sun</label>
+          <label><input type="checkbox" value="1" /> Mon</label>
+          <label><input type="checkbox" value="2" /> Tue</label>
+          <label><input type="checkbox" value="3" /> Wed</label>
+          <label><input type="checkbox" value="4" /> Thu</label>
+          <label><input type="checkbox" value="5" /> Fri</label>
+          <label><input type="checkbox" value="6" /> Sat</label>
+        </div>
+
+        <div id="ev-end-row" class="field-inline end-row hidden">
+          <span>Ends</span>
+          <select id="ev-end">
+            <option value="never">Never</option>
+            <option value="on">On date</option>
+            <option value="after">After</option>
+          </select>
+        </div>
+        <label id="ev-until-wrap" class="field hidden"><span>End date</span>
+          <input id="ev-until" type="date" /></label>
+        <label id="ev-count-wrap" class="field hidden"><span>Number of times</span>
+          <input id="ev-count" type="number" min="1" max="999" value="10" /></label>
+
+        <div class="modal-actions">
+          <button id="ev-delete" class="btn small danger hidden">Delete</button>
+          <span class="spacer"></span>
+          <button id="ev-cancel" class="btn small">Cancel</button>
+          <button id="ev-save" class="btn small primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= SETTINGS MODAL ================= -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-card wide">
+        <div class="settings-head">
+          <img src="icon.png" alt="" />
+          <span class="settings-title">Settings</span>
+        </div>
+
+        <div class="settings-section">
+          <h4>Canvas (iCal feed)</h4>
+          <p class="hint">
+            In Canvas: <b>Calendar</b> &rarr; <b>Calendar Feed</b> &rarr; copy the URL.
+            Paste it below. It stays encrypted on this computer.
+          </p>
+          <input id="canvas-url" type="password" placeholder="https://yourschool.instructure.com/feeds/calendars/user_....ics" />
+          <div class="row">
+            <span id="canvas-status" class="hint">Checking&hellip;</span>
+            <span class="spacer"></span>
+            <button id="canvas-disconnect" class="btn small danger hidden">Disconnect</button>
+            <button id="canvas-connect" class="btn small primary">Connect</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>Gmail (read-only)</h4>
+          <p class="hint">
+            From Google Cloud Console, paste your <b>OAuth Client ID</b> and
+            <b>Client Secret</b> (type: Desktop app), then click Connect Google.
+          </p>
+          <input id="gmail-client-id" type="text" placeholder="Client ID (xxxx.apps.googleusercontent.com)" />
+          <input id="gmail-client-secret" type="password" placeholder="Client Secret" />
+          <div class="row">
+            <span id="gmail-status" class="hint">Checking&hellip;</span>
+            <span class="spacer"></span>
+            <button id="gmail-disconnect" class="btn small danger hidden">Disconnect</button>
+            <button id="gmail-save" class="btn small">Save keys</button>
+            <button id="gmail-connect" class="btn small primary">Connect</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>Email filters</h4>
+          <label class="field"><span>Keywords (comma-separated)</span>
+            <input id="f-keywords" type="text" placeholder="appointment, deadline, interview" /></label>
+          <label class="field"><span>Sender domains (comma-separated, matches subdomains)</span>
+            <input id="f-domains" type="text" placeholder="deanza.edu" /></label>
+          <label class="field"><span>Sender display names (comma-separated, spaces ignored)</span>
+            <input id="f-names" type="text" placeholder="de anza, deanza" /></label>
+          <label class="field"><span>Trusted senders (always pass, even with no keywords)</span>
+            <input id="f-trusted" type="text" placeholder="communications@deanza.edu" /></label>
+          <label class="field"><span>Senders (comma-separated, optional)</span>
+            <input id="f-senders" type="text" placeholder="prof@school.edu, registrar@school.edu" /></label>
+          <label class="field"><span>Label (optional)</span>
+            <input id="f-label" type="text" placeholder="Important" /></label>
+          <label class="field-inline"><span>Max emails to scan (paged)</span>
+            <input id="f-max" type="number" min="1" max="500" /></label>
+          <label class="field-inline"><span>Look back (days, min 30)</span>
+            <input id="f-days" type="number" min="30" max="3650" /></label>
+        </div>
+
+        <div class="settings-section">
+          <h4>AI sorting (Gemini)</h4>
+          <label class="field-inline"><span><input id="llm-enabled" type="checkbox" /> Use AI sorting</span></label>
+          <label class="field"><span>Model</span>
+            <input id="llm-model" type="text" placeholder="gemini-2.5-flash-lite" /></label>
+          <input id="llm-key" type="password" placeholder="Gemini API key" />
+          <p class="hint">
+            Emails from trusted senders are sent to Google. On the free tier,
+            Google may use them to improve its products.
+          </p>
+          <div class="row">
+            <span id="llm-status" class="hint">Checking&hellip;</span>
+            <span class="spacer"></span>
+            <button id="llm-test" class="btn small">Test AI</button>
+            <button id="llm-save" class="btn small primary">Save</button>
+          </div>
+          <pre id="llm-test-output" class="llm-output hidden"></pre>
+        </div>
+
+        <div class="settings-section">
+          <h4>Learned relevance filter (on-device)</h4>
+          <p class="hint">
+            Learns what matters to you from the Gmail items you accept, mark done
+            or keep, and the ones you dismiss or block. It runs locally with a
+            small sentence model &mdash; your text never leaves this computer.
+            Until it has enough examples it stays off and the normal rules apply.
+          </p>
+          <label class="field-inline"><span><input id="ml-enabled" type="checkbox" /> Use the learned filter</span></label>
+          <p id="ml-status-text" class="hint">Checking&hellip;</p>
+          <div class="row">
+            <span class="spacer"></span>
+            <button id="ml-train" class="btn small">Train now</button>
+            <button id="ml-reset" class="btn small danger">Reset model</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>Discord (read a channel)</h4>
+          <p class="hint">
+            Create a bot in the Discord Developer Portal, invite it to your server,
+            and enable <b>Message Content Intent</b>. Then paste the bot token and the
+            channel ID (enable Developer Mode to copy it).
+          </p>
+          <input id="discord-token" type="password" placeholder="Bot token" />
+          <input id="discord-channel" type="text" placeholder="Channel ID (e.g. 123456789012345678)" />
+          <div class="row">
+            <span id="discord-status" class="hint">Checking&hellip;</span>
+            <span class="spacer"></span>
+            <button id="discord-disconnect" class="btn small danger hidden">Disconnect</button>
+            <button id="discord-connect" class="btn small primary">Connect</button>
+          </div>
+        </div>
+
+        <!-- Gmail re-sync preview: nothing is created until you click Apply -->
+        <section id="cleanup-section" class="settings-section hidden">
+          <h4>Gmail re-sync preview</h4>
+          <p id="cleanup-count" class="hint"></p>
+          <div class="table-wrap">
+            <table class="preview-table">
+              <thead>
+                <tr><th>Subject</th><th>Title</th><th>Date</th><th>Time</th><th>Parsed by</th><th>Category</th><th>Useful?</th><th>Source quote</th><th>Created?</th><th></th></tr>
+              </thead>
+              <tbody id="cleanup-list"></tbody>
+            </table>
+          </div>
+          <div class="row">
+            <span class="spacer"></span>
+            <button id="cleanup-cancel" class="btn small">Cancel</button>
+            <button id="cleanup-apply" class="btn small primary">Apply</button>
+          </div>
+        </section>
+
+        <div class="settings-section">
+          <h4>Suggested</h4>
+          <ul id="suggested-list" class="mini-list"></ul>
+        </div>
+
+        <div class="settings-section">
+          <h4>Dismissed</h4>
+          <ul id="dismissed-list" class="mini-list"></ul>
+        </div>
+
+        <div class="settings-section">
+          <h4>Filtered out</h4>
+          <p class="hint">
+            Hidden by the learned filter because they scored below the cutoff.
+            Restoring one teaches the filter that items like it are useful.
+          </p>
+          <ul id="filtered-list" class="mini-list"></ul>
+        </div>
+
+        <div class="settings-section">
+          <h4>Auto-refresh</h4>
+          <label class="field-inline">
+            <span>Every</span>
+            <input id="refresh-minutes" type="number" min="1" max="1440" />
+            <span>minutes</span>
+          </label>
+        </div>
+
+        <div class="settings-section">
+          <h4>Focus timer</h4>
+          <label class="field-inline">
+            <span>Work minutes</span>
+            <input id="timer-work" type="number" min="1" max="99" />
+          </label>
+          <label class="field-inline">
+            <span>Break minutes</span>
+            <input id="timer-break" type="number" min="1" max="99" />
+          </label>
+          <label class="field-inline"><span><input id="timer-notify" type="checkbox" /> Desktop notification</span></label>
+          <label class="field-inline"><span><input id="timer-sound" type="checkbox" /> Sound when a session ends</span></label>
+        </div>
+
+        <div class="settings-section">
+          <h4>Deadlines</h4>
+          <label class="field-inline">
+            <span>Show assignments</span>
+            <input id="f-deadline-window" type="number" min="1" max="14" />
+            <span>days before they're due</span>
+          </label>
+        </div>
+
+        <div class="settings-section">
+          <h4>Backup</h4>
+          <p class="hint">Save everything &mdash; events, tasks and links &mdash; to a JSON file.</p>
+          <div class="row">
+            <span id="export-status" class="hint"></span>
+            <span class="spacer"></span>
+            <button id="export-data" class="btn small">Export data</button>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <span class="spacer"></span>
+          <button id="settings-close" class="btn small">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= EVENT / TASK DETAILS PANEL (hidden by default) ================= -->
+    <div id="event-modal" class="modal hidden">
+      <div class="modal-card wide">
+
+        <div id="evm-view">
+          <h3 id="evm-title"></h3>
+          <div id="evm-meta"></div>
+          <div id="evm-desc-wrap" class="hidden">
+            <h4 class="panel-label">Description</h4>
+            <p id="evm-desc" class="panel-text"></p>
+          </div>
+          <div id="evm-notes-wrap" class="hidden">
+            <h4 class="panel-label">Notes</h4>
+            <p id="evm-notes" class="panel-text"></p>
+          </div>
+          <div class="modal-actions">
+            <button id="evm-delete" class="btn small danger">Delete</button>
+            <span class="spacer"></span>
+            <button id="evm-block" class="btn small danger hidden">Block sender</button>
+            <button id="evm-save-link" class="btn small hidden">Save to Links</button>
+            <button id="evm-open" class="btn small hidden">Open in Gmail</button>
+            <button id="evm-done" class="btn small">Mark done</button>
+            <button id="evm-edit" class="btn small primary">Edit</button>
+            <button id="evm-close" class="btn small">Close</button>
+          </div>
+        </div>
+
+        <div id="evm-editview" class="hidden">
+          <h3>Edit</h3>
+          <label class="field"><span>Title</span>
+            <input id="ee-title" type="text" /></label>
+          <label class="field"><span>Date</span>
+            <input id="ee-date" type="date" /></label>
+          <label class="field"><span>Start time</span>
+            <input id="ee-time" type="time" /></label>
+          <label class="field"><span>End time</span>
+            <input id="ee-endtime" type="time" /></label>
+          <label class="field"><span>Location / room</span>
+            <input id="ee-location" type="text" placeholder="e.g. E36" /></label>
+          <label class="field"><span>Meeting link (URL)</span>
+            <input id="ee-url" type="text" placeholder="https://..." /></label>
+          <label class="field"><span>Notes</span>
+            <textarea id="ee-notes" rows="3"></textarea></label>
+          <div class="modal-actions">
+            <span class="spacer"></span>
+            <button id="ee-cancel" class="btn small">Cancel</button>
+            <button id="ee-save" class="btn small primary">Save</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ================= DAY LIST (the "+N more" link) ================= -->
+    <div id="day-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="day-title"></h3>
+        <ul id="day-list" class="day-list"></ul>
+        <div class="modal-actions">
+          <button id="day-add" class="btn small primary">+ Add event</button>
+          <span class="spacer"></span>
+          <button id="day-close" class="btn small">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= LINK FORM (add / edit a saved link) ================= -->
+    <div id="link-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="link-modal-title">Add link</h3>
+
+        <label class="field"><span>Title</span>
+          <input id="lm-title" type="text" placeholder="e.g. MESA Scholarship" /></label>
+
+        <label class="field"><span>URL</span>
+          <input id="lm-url" type="text" placeholder="https://..." /></label>
+
+        <label class="field"><span>Category</span>
+          <select id="lm-category">
+            <option>Internship</option>
+            <option>MESA</option>
+            <option>Scholarship</option>
+            <option>School</option>
+            <option>Other</option>
+          </select></label>
+
+        <label class="field"><span>Notes (optional)</span>
+          <textarea id="lm-notes" rows="2"></textarea></label>
+
+        <label class="field"><span>Deadline (optional &mdash; adds a calendar event)</span>
+          <input id="lm-deadline" type="date" /></label>
+
+        <div class="modal-actions">
+          <button id="lm-delete" class="btn small danger hidden">Delete</button>
+          <span class="spacer"></span>
+          <button id="lm-cancel" class="btn small">Cancel</button>
+          <button id="lm-save" class="btn small primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= THIS-EVENT-ONLY / ALL-EVENTS CHOICE ================= -->
+    <div id="choice-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="choice-title">Recurring event</h3>
+        <p id="choice-text" class="hint"></p>
+        <div class="modal-actions">
+          <button id="choice-cancel" class="btn small">Cancel</button>
+          <span class="spacer"></span>
+          <button id="choice-one" class="btn small">This event only</button>
+          <button id="choice-all" class="btn small primary">All events</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= UNDO TOAST ================= -->
+    <div id="toast" class="toast hidden">
+      <span id="toast-msg"></span>
+      <button id="toast-undo" class="btn small">Undo</button>
+    </div>
+
+  </div>
+
+  <!-- FullCalendar (vendored locally so the app works offline) -->
+  <script src="vendor/fullcalendar.global.min.js"></script>
+  <!-- Shared pure helpers (merge/dedupe) -->
+  <script src="sync.js"></script>
+  <!-- Shared pure helpers (recurrence) -->
+  <script src="recur.js"></script>
+  <script src="renderer.js"></script>
+  <!-- Embedded pomodoro (scoped; uses the widget's shared task list) -->
+  <script src="focus/focus.js"></script>
+</body>
+</html>

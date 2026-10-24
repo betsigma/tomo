@@ -1,0 +1,32 @@
+{
+  "name": "schedule-widget",
+  "version": "1.0.0",
+  "description": "All-in-one desktop schedule and to-do widget (Canvas + Gmail + Calendar)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test-features.js",
+    "icons": "node build/make-icons.js",
+    "debug:canvas": "node debug-canvas.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "com.schedule.widget",
+    "win": {
+      "icon": "build/icon.ico"
+    }
+  },
+  "devDependencies": {
+    "@fontsource/nunito": "^5.3.0",
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "electron": "^33.0.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.7.0",
+    "chrono-node": "^2.10.2",
+    "fullcalendar": "^6.1.21",
+    "googleapis": "^185.0.0",
+    "node-ical": "^0.27.3"
+  }
+}

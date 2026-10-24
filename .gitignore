@@ -1,0 +1,11 @@
+# Dependencies (re-created by "npm install")
+node_modules/
+
+# Local data & secrets — never commit these
+data/
+*.token
+.env
+
+# Electron build output
+dist/
+out/
