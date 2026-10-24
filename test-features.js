@@ -499,6 +499,24 @@ checkAsync('creao: hourly run cap stops live runs', async () => {
   assert.strictEqual(r.rateLimited, true); assert.strictEqual(r.output.morning_brief, 'Hi.');
 });
 
+checkAsync('creao: JSON in an artifact is downloaded without forwarding the key on redirect', async () => {
+  const calls = [];
+  const good = JSON.stringify({ morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] });
+  const fetchFn = async (url, init = {}) => {
+    calls.push({ url, auth: init.headers && init.headers.Authorization });
+    const json = (o) => ({ ok: true, status: 200, text: async () => JSON.stringify(o) });
+    if (init.method === 'POST') return json({ id: 'run-9', status: 'pending' });
+    if (url.includes('/artifacts/download')) return { ok: false, status: 302, headers: { get: () => 'https://storage.example/x.json' }, text: async () => '' };
+    if (url.startsWith('https://storage.example/')) return { ok: true, status: 200, text: async () => good };
+    return json({ id: 'run-9', status: 'completed', result: { text: '{"task_count":3}', artifacts: [{ id: 'art-1', type: 'application/json', title: 'digest.json' }] } });
+  };
+  const c = creao.createClient({ dataDir: tmpData(), env: liveEnv('DIGEST'), fetch: fetchFn, log: () => {} });
+  const r = await c.run('DIGEST', { v: 1 });
+  assert.strictEqual(r.ok, true, r.error); assert.strictEqual(r.output.team_digest.length, 3);
+  const storageHop = calls.find((x) => x.url.startsWith('https://storage.example/'));
+  assert.ok(storageHop && !storageHop.auth, 'no Authorization on the storage hop');
+});
+
 // Run the async checks, then print the summary.
 (async () => {
   for (const { name, fn } of asyncChecks) {

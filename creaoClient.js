@@ -6,7 +6,10 @@
 //   POST {BASE}/apps/{appId}/runs            body {"inputs": {...}}  -> {id, status:"pending"}
 //   GET  {BASE}/apps/{appId}/runs/{runId}    poll until completed | failed | cancelled
 //   Auth: "Authorization: Bearer <capi_ key>" (one key per agent)
+//   GET  {BASE}/runs/{runId}/artifacts/download?artifactId=…  -> 302 to storage
 // Webhooks are not used: CREAO refuses localhost URLs, so a desktop app polls.
+// A completed run carries result.text / result.chatText and, for some agents,
+// result.artifacts (files). The JSON is looked for in that order.
 //
 // Each role has its OWN App ID and key in .env (CREAO_APP_ID_<ROLE>,
 // CREAO_KEY_<ROLE>). A role with a missing key, or CREAO_MODE=mock, uses the
@@ -219,6 +222,45 @@ function createClient(opts = {}) {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // Download one artifact's text. The CREAO endpoint answers 302 to a temporary
+  // storage URL; that hop is fetched WITHOUT the Authorization header so the key
+  // never leaves CREAO.
+  async function downloadArtifact(role, runId, artifactId) {
+    const { key } = creds(role);
+    const url = `${BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts/download?artifactId=${encodeURIComponent(artifactId)}`;
+    let res = await doFetch(url, { method: 'GET', headers: { 'Authorization': 'Bearer ' + key }, redirect: 'manual' });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers && res.headers.get && res.headers.get('location');
+      if (!loc) throw new Error('Artifact redirect had no location.');
+      res = await doFetch(loc, { method: 'GET' });
+    }
+    if (!res.ok) throw new Error(`Artifact download HTTP ${res.status}`);
+    const text = await res.text();
+    return text.slice(0, 2000000);
+  }
+
+  // Try each place a run can carry the agent's JSON; return the first output
+  // that validates. Throws the first validation error if none does.
+  async function outputFromRun(role, finished, runId) {
+    const r = (finished && finished.result) || {};
+    const candidates = [runReply(finished)];
+    if (r.chatText && r.chatText !== candidates[0]) candidates.push(r.chatText);
+    let firstErr = null;
+    for (const c of candidates) {
+      try { return { output: checkOutput(role, extractJson(c)), from: 'text' }; }
+      catch (err) { firstErr = firstErr || err; }
+    }
+    const arts = Array.isArray(r.artifacts) ? r.artifacts : [];
+    const ordered = [...arts].sort((a, b) => Number(/json/i.test(b.type + b.title)) - Number(/json/i.test(a.type + a.title)));
+    for (const a of ordered.slice(0, 3)) {
+      try {
+        const text = await downloadArtifact(role, runId, a.id);
+        return { output: checkOutput(role, extractJson(text)), from: 'artifact' };
+      } catch (err) { firstErr = firstErr || err; }
+    }
+    throw firstErr || new Error('The agent reply contained no JSON object.');
+  }
+
   // Start a run and poll it to a terminal state. Returns the final run object.
   async function runLive(role, inputs, onStatus) {
     const { appId, key } = creds(role);
@@ -311,8 +353,8 @@ function createClient(opts = {}) {
 
     try {
       const { run: finished, runId } = await runLive(role, toInputs(role, input), onStatus);
-      const output = checkOutput(role, extractJson(runReply(finished)));
-      log(`[creao] ${role} completed (run ${runId})`);
+      const { output, from } = await outputFromRun(role, finished, runId);
+      log(`[creao] ${role} completed (run ${runId}, JSON from ${from})`);
       return remember(output, 'live', runId);
     } catch (err) {
       return fallback(String((err && err.message) || err), { runId: err && err.runId });
@@ -348,7 +390,13 @@ function createClient(opts = {}) {
     return prev ? prev.output : null;
   }
 
-  return { run, status, lastOutput, modeOf, configured, toInputs, runLive, checkOutput, loadMock };
+  // Re-read a finished run by id (a GET; costs no credits). Used by test:creao.
+  async function getRun(role, runId) {
+    const { appId, key } = creds(role);
+    return http('GET', `${BASE_URL}/apps/${encodeURIComponent(appId)}/runs/${encodeURIComponent(runId)}`, key);
+  }
+
+  return { run, status, lastOutput, modeOf, configured, toInputs, runLive, getRun, outputFromRun, checkOutput, loadMock };
 }
 
 module.exports = {

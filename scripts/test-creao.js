@@ -1,18 +1,24 @@
 // scripts/test-creao.js
 // ---------------------------------------------------------------------------
-// npm run test:creao [-- --role=ANALYST]
+// npm run test:creao [-- --role=ANALYST]       new run per agent (spends credits)
+// npm run test:creao -- --recheck              re-read the last test's runs (free)
 //
 // Tests each CONFIGURED agent one at a time with a small sample input and
-// reports which ones work. Each live test spends CREAO credits (one run).
+// reports which ones work. Run IDs are saved to data/creao-last-test.json so
+// --recheck can re-inspect them with plain GETs.
 // Prints the SHAPE of the final run object (keys + types, no values) so the
 // response format can be checked against the docs. Never prints keys or IDs.
 // ---------------------------------------------------------------------------
 
+const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
 require(path.join(ROOT, 'env.js')).loadEnv(path.join(ROOT, '.env'));
 const { createClient, ROLES, ROLE_INFO, extractJson, runReply } = require(path.join(ROOT, 'creaoClient.js'));
 
+const recheck = process.argv.includes('--recheck');
+const LAST_FILE = path.join(ROOT, 'data', 'creao-last-test.json');
+const lastRuns = (() => { try { return JSON.parse(fs.readFileSync(LAST_FILE, 'utf8')); } catch { return {}; } })();
 const only = (process.argv.find((a) => a.startsWith('--role=')) || '').slice(7).toUpperCase();
 const client = createClient({ rootDir: ROOT, log: () => {} });
 
@@ -51,22 +57,51 @@ function sampleInput(role) {
   return { ranked_tasks: analyst.tasks, crunch_weeks: analyst.crunch_weeks, proposed_blocks: planner.proposals };
 }
 
+// Where could the JSON be? Report each place: its shape and whether it validates.
+async function diagnose(role, run, runId) {
+  const r = (run && run.result) || {};
+  const places = [['result.text', r.text], ['result.chatText', r.chatText]];
+  for (const a of (Array.isArray(r.artifacts) ? r.artifacts : [])) {
+    console.log(`  ${role}: artifact type=${a.type} title=${a.title}`);
+  }
+  for (const [label, val] of places) {
+    if (val == null) continue;
+    const parsed = extractJson(val);
+    let verdict = 'no JSON';
+    if (parsed) { try { client.checkOutput(role, parsed); verdict = 'VALID'; } catch (e) { verdict = e.message; } }
+    console.log(`  ${role}: ${label} -> ${verdict}`);
+    if (parsed) console.log(`      shape: ${shape(parsed, 1)}`);
+  }
+  try {
+    const { from } = await client.outputFromRun(role, run, runId);
+    return { ok: true, note: `valid JSON (from ${from})` };
+  } catch (err) {
+    return { ok: false, note: err.message };
+  }
+}
+
 async function testRole(role) {
   if (!client.configured(role)) return { role, result: 'SKIPPED', note: `no CREAO_APP_ID_${role} / CREAO_KEY_${role} -> app uses mock` };
-  const started = Date.now();
-  let lastStatus = '';
   try {
-    const { run } = await client.runLive(role, client.toInputs(role, sampleInput(role)), (s) => {
-      if (s.runStatus && s.runStatus !== lastStatus) { lastStatus = s.runStatus; process.stdout.write(`  ${role}: ${s.runStatus}\n`); }
-    });
-    console.log(`  ${role}: run object shape:\n    ${shape(run)}`);
-    const parsed = extractJson(runReply(run));
-    try {
-      client.checkOutput(role, parsed);
-      return { role, result: 'OK', note: `valid JSON in ${Math.round((Date.now() - started) / 1000)}s` };
-    } catch (err) {
-      return { role, result: 'BAD OUTPUT', note: err.message + (parsed ? `\n      parsed shape: ${shape(parsed, 1)}` : '') };
+    let run, runId;
+    if (recheck) {
+      runId = lastRuns[role];
+      if (!runId) return { role, result: 'SKIPPED', note: 'no saved run; run without --recheck first' };
+      run = await client.getRun(role, runId);
+    } else {
+      let lastStatus = '';
+      ({ run, runId } = await client.runLive(role, client.toInputs(role, sampleInput(role)), (s) => {
+        if (s.runStatus && s.runStatus !== lastStatus) { lastStatus = s.runStatus; console.log(`  ${role}: ${s.runStatus}`); }
+      }));
+      lastRuns[role] = runId;
+      fs.mkdirSync(path.dirname(LAST_FILE), { recursive: true });
+      fs.writeFileSync(LAST_FILE, JSON.stringify(lastRuns, null, 2));
     }
+    console.log(`  ${role}: run object shape:`);
+    console.log(`    ${shape(run)}`);
+    if (run.status !== 'completed') return { role, result: 'FAILED', note: `run ${run.status}${run.errorCode ? ' (' + run.errorCode + ')' : ''}` };
+    const d = await diagnose(role, run, runId);
+    return { role, result: d.ok ? 'OK' : 'BAD OUTPUT', note: d.note };
   } catch (err) {
     return { role, result: 'FAILED', note: String(err.message || err) };
   }
