@@ -1,0 +1,10 @@
+{
+  "proposals": [
+    { "task_id": "mock-t1", "title": "Lab 5 report: data + error analysis", "start": "{{day+0}}T16:00", "end": "{{day+0}}T16:50", "reason": "Highest priority; first of 3 sessions sized from a 120-min estimate (+15% from your history)." },
+    { "task_id": "mock-t1", "title": "Lab 5 report: write-up", "start": "{{day+0}}T17:00", "end": "{{day+0}}T17:50", "reason": "Second session after a 10-minute break." },
+    { "task_id": "mock-t1", "title": "Lab 5 report: conclusion + proofread", "start": "{{day+1}}T10:00", "end": "{{day+1}}T10:40", "reason": "Finishes the report the morning before it is due." },
+    { "task_id": "mock-t2", "title": "Quiz 6 practice problems", "start": "{{day+1}}T14:00", "end": "{{day+1}}T14:50", "reason": "Practice before the timed quiz; fits the free window after class." },
+    { "task_id": "mock-t3", "title": "Upload financial aid document", "start": "{{day+2}}T12:00", "end": "{{day+2}}T12:15", "reason": "Short task placed in a lunch gap, two days before the deadline." }
+  ],
+  "adjustment_note": "Your labs usually take about 15% longer than estimated, so lab blocks were lengthened."
+}

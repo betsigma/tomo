@@ -1,0 +1,38 @@
+{
+  "$comment": "Output of the Important Mail Scanner (role MAIL). Emails are ranked: most important first.",
+  "type": "object",
+  "required": ["important_emails", "events"],
+  "properties": {
+    "important_emails": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["subject", "sender", "summary", "importance", "reason", "event_date"],
+        "properties": {
+          "subject": { "type": "string" },
+          "sender": { "type": "string" },
+          "summary": { "type": "string", "maxLength": 600 },
+          "importance": { "type": "number", "minimum": 0, "maximum": 100 },
+          "reason": { "type": "string" },
+          "event_date": { "type": ["string", "null"] },
+          "link": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "date", "source_subject"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "date": { "type": "string" },
+          "start_time": { "type": ["string", "null"] },
+          "end_time": { "type": ["string", "null"] },
+          "location": { "type": ["string", "null"] },
+          "source_subject": { "type": "string" }
+        }
+      }
+    }
+  }
+}

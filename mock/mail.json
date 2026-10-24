@@ -1,0 +1,36 @@
+{
+  "important_emails": [
+    {
+      "subject": "MESA Tutoring: midterm review sessions this week",
+      "sender": "mesa@deanza.edu",
+      "summary": "MESA is running drop-in calculus and physics review sessions before midterms, in S43.",
+      "importance": 86,
+      "reason": "MESA program email with a dated event that matches your current courses.",
+      "event_date": "{{day+2}}",
+      "link": null
+    },
+    {
+      "subject": "Financial aid: action required by Friday",
+      "sender": "financialaid@fhda.edu",
+      "summary": "One document is missing from your aid file; upload it in the student portal by Friday.",
+      "importance": 92,
+      "reason": "Deadline with financial consequences, from a trusted college domain.",
+      "event_date": "{{day+4}}",
+      "link": null
+    },
+    {
+      "subject": "De Anza Weekly: club fair and library hours",
+      "sender": "communications@deanza.edu",
+      "summary": "Club fair Thursday in the Main Quad; library open until 9 PM during midterms.",
+      "importance": 54,
+      "reason": "Campus newsletter with one dated event.",
+      "event_date": "{{day+3}}",
+      "link": null
+    }
+  ],
+  "events": [
+    { "title": "MESA midterm review", "date": "{{day+2}}", "start_time": "15:00", "end_time": "17:00", "location": "S43", "source_subject": "MESA Tutoring: midterm review sessions this week" },
+    { "title": "Financial aid document due", "date": "{{day+4}}", "start_time": null, "end_time": null, "location": null, "source_subject": "Financial aid: action required by Friday" },
+    { "title": "Club fair", "date": "{{day+3}}", "start_time": "11:30", "end_time": "13:30", "location": "Main Quad", "source_subject": "De Anza Weekly: club fair and library hours" }
+  ]
+}

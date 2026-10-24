@@ -1,0 +1,38 @@
+{
+  "$comment": "Output of the Deadline & Task Analyst (role ANALYST).",
+  "type": "object",
+  "required": ["tasks", "crunch_weeks"],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "due_date", "priority_rank", "urgency_reason", "summary",
+                     "deliverables", "effort_estimate_minutes", "confidence", "source"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "due_date": { "type": ["string", "null"] },
+          "priority_rank": { "type": "integer", "minimum": 1 },
+          "urgency_reason": { "type": "string" },
+          "summary": { "type": ["string", "null"], "maxLength": 600 },
+          "deliverables": { "type": "array", "items": { "type": "string" } },
+          "effort_estimate_minutes": { "type": "number", "minimum": 0, "maximum": 2400 },
+          "confidence": { "enum": ["low", "med", "high"] },
+          "source": { "enum": ["canvas", "email"] }
+        }
+      }
+    },
+    "crunch_weeks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["week_start", "reason"],
+        "properties": {
+          "week_start": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}

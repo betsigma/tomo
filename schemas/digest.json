@@ -1,0 +1,14 @@
+{
+  "$comment": "Output of the Digest Writer (role DIGEST).",
+  "type": "object",
+  "required": ["morning_brief", "team_digest"],
+  "properties": {
+    "morning_brief": { "type": "string", "maxLength": 900 },
+    "team_digest": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 6,
+      "items": { "type": "string", "maxLength": 200 }
+    }
+  }
+}

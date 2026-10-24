@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node test-features.js",
+    "test:creao": "node scripts/test-creao.js",
     "icons": "node build/make-icons.js",
     "debug:canvas": "node debug-canvas.js"
   },

@@ -1,0 +1,22 @@
+{
+  "$comment": "Output of the Planner (role PLANNER). Proposals only; nothing is scheduled until approved.",
+  "type": "object",
+  "required": ["proposals", "adjustment_note"],
+  "properties": {
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["task_id", "title", "start", "end", "reason"],
+        "properties": {
+          "task_id": { "type": "string" },
+          "title": { "type": "string" },
+          "start": { "type": "string" },
+          "end": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "adjustment_note": { "type": "string" }
+  }
+}

@@ -414,6 +414,91 @@ check('Canvas descriptions keep up to ~4,000 characters', () => {
   assert.ok(item.description.length > 3900 && item.description.length <= 4000, 'len=' + item.description.length);
 });
 
+// --- CREAO client (offline: fake fetch, temp data dir) ---
+const creao = require('./creaoClient.js');
+const osC = require('os'), fsC = require('fs'), pathC = require('path');
+const tmpData = () => fsC.mkdtempSync(pathC.join(osC.tmpdir(), 'creao-test-'));
+const FAKE_KEY = 'capi_test_SECRET_123';
+
+// A fake CREAO API: POST creates a run, GETs report running then completed with `reply`.
+function fakeCreao(reply, { failStatus = null, calls = [] } = {}) {
+  let polls = 0;
+  return async (url, init) => {
+    calls.push({ url, method: init.method, auth: init.headers.Authorization, body: init.body });
+    if (failStatus) return { ok: false, status: failStatus, text: async () => '{"error":"NOPE"}' };
+    if (init.method === 'POST') return { ok: true, status: 200, text: async () => '{"id":"run-1","status":"pending"}' };
+    polls++;
+    const run = polls < 2 ? { id: 'run-1', status: 'running' } : { id: 'run-1', status: 'completed', result: { text: reply } };
+    return { ok: true, status: 200, text: async () => JSON.stringify(run) };
+  };
+}
+const liveEnv = (role) => ({ CREAO_MODE: 'live', CREAO_POLL_MS: '1',
+  [`CREAO_APP_ID_${role}`]: 'app-123', [`CREAO_KEY_${role}`]: FAKE_KEY });
+
+check('extractJson: bare, fenced, and prose-wrapped replies', () => {
+  assert.deepStrictEqual(creao.extractJson('{"a":1}'), { a: 1 });
+  assert.deepStrictEqual(creao.extractJson('Here you go:\n```json\n{"a":2}\n```'), { a: 2 });
+  assert.deepStrictEqual(creao.extractJson('Sure! {"a":"x}y","b":{"c":3}} Hope that helps.'), { a: 'x}y', b: { c: 3 } });
+  assert.strictEqual(creao.extractJson('no json here'), null);
+});
+
+check('every mock file validates against its schema (tokens resolved)', () => {
+  const c = creao.createClient({ dataDir: tmpData(), env: {}, log: () => {} });
+  for (const role of creao.ROLES) c.checkOutput(role, c.loadMock(role));
+  assert.ok(!/\{\{/.test(JSON.stringify(c.loadMock('PLANNER'))), 'tokens resolved');
+});
+
+check('legacy Mail Scanner shape maps onto the contract', () => {
+  const out = creao.normalizeMail({ important: [{ title: 'a@deanza.edu', subtitle: 'Hi', importance: 0.8, reason: 'r' }] });
+  assert.strictEqual(out.important_emails[0].sender, 'a@deanza.edu');
+  assert.strictEqual(out.important_emails[0].importance, 80);
+});
+
+checkAsync('creao: role without a key uses mock and reports mode "mock"', async () => {
+  const c = creao.createClient({ dataDir: tmpData(), env: { CREAO_MODE: 'live' }, fetch: () => { throw new Error('no network'); }, log: () => {} });
+  const r = await c.run('DIGEST', { x: 1 });
+  assert.strictEqual(r.ok, true); assert.strictEqual(r.source, 'mock');
+  assert.strictEqual(c.status().roles.find((x) => x.role === 'DIGEST').mode, 'mock');
+});
+
+checkAsync('creao: live run posts inputs.payload, polls, validates; same input is cached', async () => {
+  const calls = [];
+  const reply = 'Result:\n' + JSON.stringify({ morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] });
+  const c = creao.createClient({ dataDir: tmpData(), env: liveEnv('DIGEST'), fetch: fakeCreao(reply, { calls }), log: () => {} });
+  const r1 = await c.run('DIGEST', { ranked_tasks: [] });
+  assert.strictEqual(r1.ok, true); assert.strictEqual(r1.source, 'live');
+  assert.ok(calls[0].url.endsWith('/apps/app-123/runs') && calls[0].method === 'POST');
+  assert.strictEqual(calls[0].auth, 'Bearer ' + FAKE_KEY);
+  assert.deepStrictEqual(JSON.parse(JSON.parse(calls[0].body).inputs.payload), { ranked_tasks: [] });
+  const n = calls.length;
+  const r2 = await c.run('DIGEST', { ranked_tasks: [] });
+  assert.strictEqual(r2.source, 'cache'); assert.strictEqual(calls.length, n, 'no new HTTP calls');
+});
+
+checkAsync('creao: invalid reply falls back to last good result; errors never contain the key', async () => {
+  const dir = tmpData();
+  const good = JSON.stringify({ morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] });
+  await creao.createClient({ dataDir: dir, env: liveEnv('DIGEST'), fetch: fakeCreao(good), log: () => {} }).run('DIGEST', { v: 1 });
+  const logs = [];
+  const c = creao.createClient({ dataDir: dir, env: liveEnv('DIGEST'), fetch: fakeCreao('{"morning_brief":5}'), log: (m) => logs.push(m) });
+  const r = await c.run('DIGEST', { v: 2 });
+  assert.strictEqual(r.ok, false); assert.strictEqual(r.stale, true);
+  assert.strictEqual(r.output.morning_brief, 'Hi.');
+  const r401 = await creao.createClient({ dataDir: dir, env: liveEnv('DIGEST'), fetch: fakeCreao('', { failStatus: 401 }), log: (m) => logs.push(m) }).run('DIGEST', { v: 3 });
+  assert.ok(/401/.test(r401.error));
+  const all = JSON.stringify([r, r401, logs, fsC.readFileSync(pathC.join(dir, 'creao-cache.json'), 'utf8')]);
+  assert.ok(!all.includes(FAKE_KEY), 'key leaked');
+});
+
+checkAsync('creao: hourly run cap stops live runs', async () => {
+  const env = { ...liveEnv('DIGEST'), CREAO_MAX_RUNS_PER_HOUR: '1' };
+  const good = JSON.stringify({ morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] });
+  const c = creao.createClient({ dataDir: tmpData(), env, fetch: fakeCreao(good), log: () => {} });
+  assert.strictEqual((await c.run('DIGEST', { v: 1 })).ok, true);
+  const r = await c.run('DIGEST', { v: 2 });
+  assert.strictEqual(r.rateLimited, true); assert.strictEqual(r.output.morning_brief, 'Hi.');
+});
+
 // Run the async checks, then print the summary.
 (async () => {
   for (const { name, fn } of asyncChecks) {

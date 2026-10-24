@@ -13,6 +13,7 @@
 
 const { app, BrowserWindow, ipcMain, safeStorage, shell, dialog } = require('electron');
 const path = require('path');
+require('./env').loadEnv(path.join(__dirname, '.env'));   // CREAO_* settings; values never logged
 const fs = require('fs');
 const http = require('http');
 const { google } = require('googleapis');

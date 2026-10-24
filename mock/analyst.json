@@ -1,0 +1,55 @@
+{
+  "tasks": [
+    {
+      "id": "mock-t1",
+      "title": "Lab 5: Projectile Motion report",
+      "due_date": "{{day+1}}T23:59",
+      "priority_rank": 1,
+      "urgency_reason": "Due tomorrow night and needs data analysis plus a write-up.",
+      "summary": "Write a lab report on the projectile motion experiment: data table, error analysis and a conclusion comparing measured range to the predicted value.",
+      "deliverables": ["Data table", "Error analysis", "2-page report PDF"],
+      "effort_estimate_minutes": 120,
+      "confidence": "high",
+      "source": "canvas"
+    },
+    {
+      "id": "mock-t2",
+      "title": "Quiz 6 - Integration by Parts",
+      "due_date": "{{day+2}}T09:00",
+      "priority_rank": 2,
+      "urgency_reason": "Timed quiz in two days; practice problems recommended first.",
+      "summary": "Ten-question timed Canvas quiz covering integration by parts and tabular integration.",
+      "deliverables": ["Complete quiz on Canvas"],
+      "effort_estimate_minutes": 60,
+      "confidence": "med",
+      "source": "canvas"
+    },
+    {
+      "id": "mock-t3",
+      "title": "Financial aid document upload",
+      "due_date": "{{day+4}}",
+      "priority_rank": 3,
+      "urgency_reason": "Missing aid document; small task but a hard deadline.",
+      "summary": "Upload the missing verification document to the student portal.",
+      "deliverables": ["Upload document"],
+      "effort_estimate_minutes": 15,
+      "confidence": "med",
+      "source": "email"
+    },
+    {
+      "id": "mock-t4",
+      "title": "Reading response 4",
+      "due_date": "{{day+6}}T23:59",
+      "priority_rank": 4,
+      "urgency_reason": "Due next week; no instructions were provided in Canvas.",
+      "summary": null,
+      "deliverables": [],
+      "effort_estimate_minutes": 45,
+      "confidence": "low",
+      "source": "canvas"
+    }
+  ],
+  "crunch_weeks": [
+    { "week_start": "{{week+0}}", "reason": "Lab report, calculus quiz and an aid deadline land in the same five days." }
+  ]
+}
