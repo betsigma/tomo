@@ -132,6 +132,25 @@ function matchesFilter(email, filters = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Exclusion keywords (voting / voter-registration mail)
+// ---------------------------------------------------------------------------
+// Checked against the subject and the START of the body only, so a long
+// newsletter that mentions "ballot" in paragraph 12 still gets through.
+// The list lives in Settings (filters.excludeKeywords) and is user-editable.
+const DEFAULT_EXCLUDE_KEYWORDS = 'voter registration, register to vote, ballot, polling place, election day';
+const EXCLUDE_BODY_CHARS = 600;
+
+// Returns the keyword that matched, or null.
+function excludedKeyword(subject, body, keywords) {
+  const list = keywords === undefined ? DEFAULT_EXCLUDE_KEYWORDS : keywords;
+  const hay = (String(subject || '') + ' ' + String(body || '').slice(0, EXCLUDE_BODY_CHARS)).toLowerCase();
+  for (const k of splitList(list)) {
+    if (hay.includes(k.toLowerCase())) return k;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Trust (allowlist)
 // ---------------------------------------------------------------------------
 // A pattern may be:
@@ -159,6 +178,7 @@ function isTrusted(address, patterns) {
 // ---------------------------------------------------------------------------
 // Order:
 //   1. blocked sender            -> reject
+//   1b. exclusion keyword (subject + start of body) -> reject, even if trusted
 //   2. non-trusted + Promotions/Social label -> reject
 //   3. non-trusted + List-Unsubscribe header -> reject
 //   4. sender/domain/name/keyword rules (matchesFilter)
@@ -172,6 +192,9 @@ function screenEmail(email, filters = {}) {
       return { pass: false, trusted, reason: `blocked-sender(${b})` };
     }
   }
+
+  const kw = excludedKeyword(email.subject, email.body || email.snippet, filters.excludeKeywords);
+  if (kw) return { pass: false, trusted, excluded: kw, reason: `excluded-keyword(${kw})` };
 
   if (!trusted) {
     const labels = (email.labels || []).map((l) => String(l).toUpperCase());
@@ -794,6 +817,7 @@ async function fetchPreview(gmailApi, filters = {}, cache = null, ai = null, ml 
     e.pass = v.pass;
     e.reason = v.reason;
     e.trusted = v.trusted;
+    e.excluded = v.excluded || null;
     newEmails.push(e);
   }
 
@@ -810,6 +834,7 @@ async function fetchPreview(gmailApi, filters = {}, cache = null, ai = null, ml 
       const v = screenEmail(e, filters);            // keyword rule now sees the full body
       e.pass = v.pass;
       e.reason = v.reason;
+      e.excluded = v.excluded || null;
       const { events, diag } = analyzeEmail(e.body, new Date(), { subject: e.subject, max: 5 });
       e.events = events;
       e.diag = diag;
@@ -896,6 +921,10 @@ async function fetchPreview(gmailApi, filters = {}, cache = null, ai = null, ml 
     store.entries[e.id] = slimEntry(e);
   }
 
+  // Only NEW messages are screened, so each excluded email is reported once.
+  const excluded = newEmails.filter((e) => e.excluded)
+    .map((e) => ({ subject: e.subject || '', sender: e.fromEmail || e.from || '', keyword: e.excluded }));
+
   const emails = ids.map((id) => store.entries[id]).filter((e) => e && e.pass);
   const preview = buildPreviewRows(emails);
 
@@ -908,7 +937,7 @@ async function fetchPreview(gmailApi, filters = {}, cache = null, ai = null, ml 
     (mlStats.error ? ` error=${mlStats.error}` : ''));
 
   return {
-    query: q, candidates: ids.length, pages, capped, emails, preview, cache: store, stats,
+    query: q, candidates: ids.length, pages, capped, emails, preview, cache: store, stats, excluded,
     llmCache, aiStats: {
       calls: aiStats.calls, cached: aiStats.cached, failed: aiStats.failed,
       limitReached: aiStats.limitReached
@@ -922,6 +951,8 @@ module.exports = {
   matchesFilter,
   isTrusted,
   screenEmail,
+  excludedKeyword,
+  DEFAULT_EXCLUDE_KEYWORDS,
   parseFrom,
   normalizeMessage,
   extractBodyText,

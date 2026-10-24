@@ -31,6 +31,7 @@ let mainWindow = null;
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');       // app data (not secret)
 const SECRETS_FILE = path.join(DATA_DIR, 'secrets.json');   // encrypted secrets
+const EXCLUDED_LOG = path.join(DATA_DIR, 'excluded-emails.log'); // review list for false positives
 
 // The learned relevance filter. Everything it needs lives in data/ (ml-model.json,
 // ml-embeddings.json and the cached embedding model under data/models). It is
@@ -437,6 +438,7 @@ ipcMain.handle('gmail-fetch', async (_e, filters = {}, cache = null, llmReq = nu
       : null;
 
     const res = await fetchPreview(gmail, filters, cache, ai, ml);
+    logExcluded(res.excluded);
     return {
       ok: true, emails: res.emails, query: res.query, preview: res.preview,
       cache: res.cache, stats: res.stats,
@@ -448,6 +450,24 @@ ipcMain.handle('gmail-fetch', async (_e, filters = {}, cache = null, llmReq = nu
     return { ok: false, error: String(err.message || err) };
   }
 });
+
+// Append each keyword-excluded email (subject + sender only, never the body)
+// to data/excluded-emails.log, one JSON line each, so false positives can be
+// reviewed and the keyword list tuned in Settings.
+function logExcluded(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  const at = new Date().toISOString();
+  const lines = list.map((x) => JSON.stringify({ at, keyword: x.keyword, sender: x.sender, subject: x.subject }));
+  try {
+    ensureDataDir();
+    fs.appendFileSync(EXCLUDED_LOG, lines.join('
+') + '
+', 'utf8');
+  } catch (err) {
+    console.log('[gmail] could not write excluded log:', err.message);
+  }
+  for (const x of list) console.log(`[gmail] excluded (${x.keyword}): "${x.subject}" from ${x.sender}`);
+}
 
 // ---------------------------------------------------------------------------
 // Learned relevance filter (on-device). The renderer owns the labelled examples

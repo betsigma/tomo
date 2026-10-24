@@ -35,6 +35,8 @@ let store = {
       names: 'de anza, deanza',
       trustedSenders: 'communications@deanza.edu, *@fhda.edu',
       blockedSenders: '',
+      // Subject + start of body; matching emails are dropped and logged.
+      excludeKeywords: 'voter registration, register to vote, ballot, polling place, election day',
       label: '',
       maxResults: 15,
       days: 30,
@@ -1722,6 +1724,7 @@ const gmailStatusEl = document.getElementById('gmail-status');
 const gmailConnectBtn = document.getElementById('gmail-connect');
 const gmailDisconnectBtn = document.getElementById('gmail-disconnect');
 const fKeywords = document.getElementById('f-keywords');
+const fExclude = document.getElementById('f-exclude');
 const fSenders = document.getElementById('f-senders');
 const fLabel = document.getElementById('f-label');
 const fMax = document.getElementById('f-max');
@@ -1764,6 +1767,7 @@ async function openSettings() {
   // Fill the filter inputs from saved settings.
   const gf = store.settings.gmail || {};
   fKeywords.value = gf.keywords || '';
+  if (fExclude) fExclude.value = gf.excludeKeywords || '';
   fDomains.value = gf.domains || '';
   fNames.value = gf.names || '';
   fTrusted.value = gf.trustedSenders || '';
@@ -1839,8 +1843,12 @@ function sampleGmailId() {
 }
 
 function saveGmailFilters() {
+  // Spread the old object first so fields without an input here
+  // (blockedSenders, cleanupDone) survive a save.
   store.settings.gmail = {
+    ...store.settings.gmail,
     keywords: fKeywords.value,
+    excludeKeywords: fExclude ? fExclude.value : store.settings.gmail.excludeKeywords,
     domains: fDomains.value,
     names: fNames.value,
     trustedSenders: fTrusted.value,

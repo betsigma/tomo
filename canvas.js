@@ -38,8 +38,10 @@ function firstUrl(text) {
 }
 
 // Make a description readable: no tags, entities decoded, whitespace collapsed.
+// Kept long enough (~4,000 chars) for the Deadline & Task Analyst to summarize.
+const DESCRIPTION_MAX = 4000;
 function cleanDescription(html) {
-  return cleanTitle(stripHtml(decodeEntities(String(html || '')))).slice(0, 500);
+  return cleanTitle(stripHtml(decodeEntities(String(html || '')))).slice(0, DESCRIPTION_MAX);
 }
 
 // Turn raw .ics text into a clean list of items.

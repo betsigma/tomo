@@ -381,6 +381,39 @@ checkAsync('RelevanceModel: cold start needs no model download', async () => {
   assert.strictEqual(model.status().trainedOn, 0);
 });
 
+// --- voting-email exclusion + long Canvas descriptions ---
+const gm = require('./gmail.js');
+const filtersBase = { trustedSenders: 'communications@deanza.edu', domains: 'deanza.edu', keywords: '' };
+
+check('exclusion: a trusted voter-registration email is rejected with the keyword', () => {
+  const v = gm.screenEmail({ fromEmail: 'communications@deanza.edu', subject: 'Register to vote by Oct 21', body: '' },
+    { ...filtersBase, excludeKeywords: gm.DEFAULT_EXCLUDE_KEYWORDS });
+  assert.strictEqual(v.pass, false);
+  assert.strictEqual(v.excluded, 'register to vote');
+});
+
+check('exclusion: only the START of the body is checked', () => {
+  const body = 'Club fair this Friday in the quad. '.repeat(40) + 'Bring your ballot questions.';
+  const v = gm.screenEmail({ fromEmail: 'communications@deanza.edu', subject: 'Weekly news', body },
+    { ...filtersBase, excludeKeywords: gm.DEFAULT_EXCLUDE_KEYWORDS });
+  assert.strictEqual(v.pass, true, 'late mention must not exclude');
+});
+
+check('exclusion: an empty list disables it; missing list uses the defaults', () => {
+  const email = { fromEmail: 'communications@deanza.edu', subject: 'Election Day reminder', body: '' };
+  assert.strictEqual(gm.screenEmail(email, { ...filtersBase, excludeKeywords: '' }).pass, true);
+  assert.strictEqual(gm.excludedKeyword(email.subject, '', undefined), 'election day');
+});
+
+check('Canvas descriptions keep up to ~4,000 characters', () => {
+  const { normalizeCalendar } = require('./canvas.js');
+  const long = 'Write a reflection essay. '.repeat(300);   // ~7,800 chars
+  const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:a1', 'DTSTART;VALUE=DATE:20261101',
+    'SUMMARY:Essay 2 (ENGL 1A)', 'DESCRIPTION:' + long, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const [item] = normalizeCalendar(ics);
+  assert.ok(item.description.length > 3900 && item.description.length <= 4000, 'len=' + item.description.length);
+});
+
 // Run the async checks, then print the summary.
 (async () => {
   for (const { name, fn } of asyncChecks) {
