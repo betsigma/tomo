@@ -11,7 +11,7 @@ input_json (textarea, required): a JSON object with:
 The app sends this same JSON in an input named "payload". If input_json is empty, read the JSON from payload instead.
 Procedure
 Parse input_json (or payload). If it fails to parse, return a JSON error object: {"error": "invalid input_json"}.
-For each task, produce one output item. For each email in important_emails that contains a deadline/event_date, produce one output item (source: "email").
+For each task, produce one output item with the task's own id. For each email in important_emails that contains a deadline/event_date, produce one output item (source: "email") with id "email-" followed by the email subject in lowercase with spaces replaced by dashes (e.g. "email-financial-aid-action-required-by-friday"). Never leave an id empty.
 Never invent details not present in the input. If a task has no description, set "summary" to null and "confidence" to "low".
 Write "summary" as 1-2 plain sentences describing what the task requires, based only on available fields (title, course, description).
 Estimate "effort_estimate_minutes" using judgment based on task type/keywords (e.g. "exam", "essay", "problem set", "reading"); set "confidence" to "low", "med", or "high" depending on how much information is available (no description = low; detailed description = high).

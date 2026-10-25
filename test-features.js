@@ -1129,6 +1129,17 @@ check('Discord messages go to the Analyst, and its dates wait in the Inbox', () 
   assert.strictEqual(Inbox.pendingProposals(outputs, store).length, 0);
 });
 
+check('an Analyst task with an empty id gets a stable id from its title', () => {
+  const T = require('./teamInputs.js');
+  const out = T.fillTaskIds([
+    { id: 't1', title: 'Lab 5' },
+    { id: '', title: 'Financial aid: action required by Friday' },
+    { title: 'Club dues' }
+  ]);
+  assert.deepStrictEqual(out.map((t) => t.id), ['t1', 'email-financial-aid-action-required-by-friday', 'email-club-dues']);
+  assert.strictEqual(T.fillTaskIds([{ id: '', title: 'Club dues' }])[0].id, 'email-club-dues', 'same title, same id');
+});
+
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 

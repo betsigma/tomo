@@ -77,6 +77,14 @@ function mergeDuplicateTasks(tasks) {
   return { tasks: kept, merged };
 }
 
+// An empty task id would merge tasks and break reject, so derive a stable one
+// from the title (the same title gives the same id on every run).
+function fillTaskIds(tasks) {
+  return (tasks || []).map((t) => (t.id ? t : {
+    ...t, id: 'email-' + String(t.title || 'task').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
+  }));
+}
+
 // Recent Discord announcements for the Analyst to read dates from (newest 20, last 14 days).
 function discordMessages(store, now) {
   const since = addDays(now, -14).getTime();
@@ -242,5 +250,5 @@ function checkProposals(proposals, calendar, windows) {
 
 module.exports = {
   localDate, localStamp, parseStamp, contentHash, usefulDescription,
-  buildAnalystInput, mergeAnalyst, mergeDuplicateTasks, buildCalendar, freeWindows, checkProposals
+  buildAnalystInput, mergeAnalyst, mergeDuplicateTasks, buildCalendar, freeWindows, checkProposals, fillTaskIds
 };

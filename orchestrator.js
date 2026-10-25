@@ -147,6 +147,7 @@ function createOrchestrator(opts) {
         ranked = merged.tasks;
         if (analyst.ok && analyst.source === 'live') state.analystCache = merged.cache;
       }
+      ranked = T.fillTaskIds(ranked);
       const discordEvents = analyst.output.events || [];
       state.outputs.ANALYST = { tasks: ranked, crunch_weeks: analyst.output.crunch_weeks, events: discordEvents };
       finish('ANALYST', analyst, `sent ${built.sent} of ${built.eligible} · ${ranked.length} ranked task${ranked.length === 1 ? '' : 's'} (${fresh} with new text) · ${analyst.output.crunch_weeks.length} crunch week${analyst.output.crunch_weeks.length === 1 ? '' : 's'} · ${discordEvents.length} Discord date${discordEvents.length === 1 ? '' : 's'}`);
