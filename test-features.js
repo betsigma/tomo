@@ -666,6 +666,58 @@ checkAsync('a full run records how many tasks were sent', async () => {
   assert.ok(String(state.nodes.ANALYST.handoff).includes('sent 1 of 1'));
 });
 
+console.log('\n13. Approval inbox: only an approval enters the calendar');
+const Inbox = require('./inbox.js');
+
+function inboxOutputs() {
+  return {
+    PLANNER: { proposals: [{ task_id: 'lab', title: 'Lab block', start: '2026-10-24T13:00', end: '2026-10-24T13:40', reason: 'Free after lecture' }] },
+    MAIL: {
+      important_emails: [{ subject: 'Aid', summary: 'Upload the form.', reason: 'Deadline Friday', event_date: '2026-10-25' }],
+      events: [{ title: 'Aid deadline', date: '2026-10-25', start_time: '17:00', location: 'Portal', source_subject: 'Aid' }]
+    },
+    ANALYST: { tasks: [
+      { id: 'email-1', title: 'Upload aid form', due_date: '2026-10-25', summary: 'One missing document.', urgency_reason: 'Due Friday', source: 'email' },
+      { id: 'canvas-1', title: 'Lab 5', due_date: '2026-10-24', summary: 'Write the report.', urgency_reason: 'Due today', source: 'canvas' }
+    ] }
+  };
+}
+
+check('pending proposals are planner blocks, mail dates, and email tasks only', () => {
+  const items = Inbox.listProposals(inboxOutputs());
+  assert.deepStrictEqual(items.map((p) => p.kind), ['block', 'mail', 'email-task']);
+  assert.strictEqual(items[0].key, 'agent:block:lab:2026-10-24T13:00');
+  assert.strictEqual(items[0].reason, 'Free after lecture');
+  assert.strictEqual(items[1].summary, 'Upload the form.');
+  assert.strictEqual(items[2].summary, 'One missing document.');
+});
+
+check('a rejected proposal stays out of the calendar and out of Pending', () => {
+  const store = { events: [], todos: [] };
+  const proposal = Inbox.listProposals(inboxOutputs())[0];
+  Inbox.rejectProposal(store, proposal, () => 'tomb');
+  assert.strictEqual(store.events.length, 1);
+  assert.strictEqual(store.events[0].status, 'dismissed');
+  assert.strictEqual(store.events[0].dedupeKey, proposal.key);
+  assert.strictEqual(store.events[0].source, 'agent');
+  assert.deepStrictEqual(Inbox.pendingProposals(inboxOutputs(), store).map((p) => p.key).includes(proposal.key), false);
+});
+
+check('approve adds one calendar event; edit keeps the same key', () => {
+  const store = { events: [], todos: [] };
+  const proposal = Inbox.listProposals(inboxOutputs())[1];
+  Inbox.approveProposal(store, proposal, { title: 'Aid office', time: '16:30' }, () => 'ev1');
+  Inbox.approveProposal(store, proposal, null, () => 'ev2');
+  assert.strictEqual(store.events.length, 1);
+  assert.strictEqual(store.events[0].status, 'active');
+  assert.strictEqual(store.events[0].source, 'agent');
+  assert.strictEqual(store.events[0].title, 'Aid office');
+  assert.strictEqual(store.events[0].time, '16:30');
+  assert.strictEqual(store.events[0].start, '2026-10-25');
+  assert.strictEqual(store.events[0].dedupeKey, proposal.key);
+  assert.strictEqual(Inbox.pendingProposals(inboxOutputs(), store).some((p) => p.key === proposal.key), false);
+});
+
 // Run the async checks, then print the summary.
 (async () => {
   for (const { name, fn } of asyncChecks) {

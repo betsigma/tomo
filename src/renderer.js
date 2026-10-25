@@ -71,7 +71,8 @@ const SOURCE_COLORS = {
   manual:  '#fbe8a0',
   canvas:  '#f8a3c4',
   gmail:   '#d4bfff',
-  discord: '#afc6ff'
+  discord: '#afc6ff',
+  agent:   '#ffd6a5'
 };
 
 // ---------------------------------------------------------------------------
@@ -279,16 +280,56 @@ function renderTeam() {
 
   const pending = document.getElementById('team-pending');
   if (!pending) return;
-  const proposals = (state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [];
-  const mailEvents = (state.outputs && state.outputs.MAIL && state.outputs.MAIL.events) || [];
-  const items = [];
-  for (const p of proposals) {
-    items.push(`<li class="pending-item"><div class="pending-title">${esc(p.title || 'Study block')}</div><div class="pending-meta">${esc(p.start || '')} – ${esc(p.end || '')}</div><div class="pending-reason">${esc(p.reason || '')}</div></li>`);
-  }
-  for (const ev of mailEvents) {
-    items.push(`<li class="pending-item"><div class="pending-title">${esc(ev.title || 'Email date')}</div><div class="pending-meta">${esc(ev.date || '')}${ev.location ? ' · ' + esc(ev.location) : ''}</div></li>`);
-  }
-  pending.innerHTML = items.length ? items.join('') : '<li class="empty-note">Nothing waiting yet.</li>';
+  const proposals = (typeof Inbox !== 'undefined')
+    ? Inbox.pendingProposals(state.outputs, store)
+    : [];
+  pending.innerHTML = proposals.length ? proposals.map(pendingRow).join('') : '<li class="empty-note">Nothing waiting yet.</li>';
+}
+
+function pendingRow(p) {
+  const when = [p.start, p.time].filter(Boolean).join(' ');
+  const what = p.what || [p.summary, p.reason].filter(Boolean).join(' — ');
+  return `<li class="pending-item" data-key="${esc(p.key)}">
+    <div class="pending-title">${esc(p.title)}</div>
+    <div class="pending-meta">${esc(when)}${p.location ? ' · ' + esc(p.location) : ''}</div>
+    <details class="pending-what"><summary>what's this?</summary><p>${esc(what || 'No summary yet.')}</p></details>
+    <form class="pending-edit hidden" data-edit-for="${esc(p.key)}">
+      <input name="title" type="text" value="${esc(p.title)}" />
+      <input name="start" type="date" value="${esc(p.start || '')}" />
+      <input name="time" type="time" value="${esc(p.time || '')}" />
+    </form>
+    <div class="pending-actions">
+      <button type="button" class="btn small primary" data-action="approve-proposal" data-key="${esc(p.key)}">Approve</button>
+      <button type="button" class="btn small" data-action="edit-proposal" data-key="${esc(p.key)}">Edit</button>
+      <button type="button" class="btn small" data-action="reject-proposal" data-key="${esc(p.key)}">Reject</button>
+    </div>
+  </li>`;
+}
+
+function proposalByKey(key) {
+  if (typeof Inbox === 'undefined' || !teamState) return null;
+  return Inbox.listProposals(teamState.outputs).find((p) => p.key === key) || null;
+}
+
+function editsFromForm(key) {
+  const form = document.querySelector('.pending-edit[data-edit-for="' + key.replace(/"/g, '') + '"]');
+  if (!form || form.classList.contains('hidden')) return null;
+  return {
+    title: form.querySelector('[name=title]').value.trim(),
+    start: form.querySelector('[name=start]').value,
+    time: form.querySelector('[name=time]').value
+  };
+}
+
+function decideProposal(key, action) {
+  const proposal = proposalByKey(key);
+  if (!proposal || typeof Inbox === 'undefined') return;
+  if (action === 'reject') Inbox.rejectProposal(store, proposal, uid);
+  else Inbox.approveProposal(store, proposal, editsFromForm(key), uid);
+  save();
+  renderCalendar();
+  renderTeam();
+  setStatus(action === 'reject' ? 'Proposal rejected' : 'Added to calendar');
 }
 
 function applyTeam(state) {
@@ -772,7 +813,7 @@ async function mlInit() {
 function toFCEvent(ev, opts = {}) {
   const color = SOURCE_COLORS[ev.source] || SOURCE_COLORS.manual;
   // The pale yellow manual chips need dark plum text; the others are fine white.
-  const textColor = ev.source === 'manual' ? '#6b2d4f' : '#ffffff';
+  const textColor = (ev.source === 'manual' || ev.source === 'agent') ? '#6b2d4f' : '#ffffff';
   const done = opts.done !== undefined ? opts.done : !!ev.done;
   return {
     id: opts.id || ev.id,
@@ -2229,6 +2270,20 @@ function wireUI() {
   on('team-run', 'click', () => {
     if (!window.widgetAPI.teamRun) return;
     window.widgetAPI.teamRun().then(applyTeam).catch((err) => console.warn('[team] ' + err.message));
+  });
+  const pendingList = document.getElementById('team-pending');
+  if (pendingList) pendingList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const key = btn.dataset.key;
+    if (btn.dataset.action === 'edit-proposal') {
+      const form = btn.closest('.pending-item').querySelector('.pending-edit');
+      if (form) form.classList.toggle('hidden');
+      return;
+    }
+    if (btn.dataset.action === 'approve-proposal' || btn.dataset.action === 'reject-proposal') {
+      decideProposal(key, btn.dataset.action === 'reject-proposal' ? 'reject' : 'approve');
+    }
   });
 
   // Repeats controls: show/hide the weekday and "Ends" options.

@@ -76,6 +76,7 @@
   --src-canvas:  #f8a3c4;
   --src-gmail:   #d4bfff;
   --src-discord: #afc6ff;
+  --src-agent:   #ffd6a5;
 }
 
 /* ---------- DARK THEME ---------- */
@@ -338,6 +339,7 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--hover); }
 .swatch.canvas  { background: var(--src-canvas); }
 .swatch.gmail   { background: var(--src-gmail); }
 .swatch.discord { background: var(--src-discord); }
+.swatch.agent   { background: var(--src-agent); }
 
 /* ---------- STATUS BAR ---------- */
 .statusbar {
@@ -680,3 +682,9 @@ html.theme-dark .team-node.is-error { background: #3a2230; }
 }
 .pending-item .pending-title { font-weight: 700; font-size: 13px; }
 .pending-item .pending-meta, .pending-item .pending-reason { font-size: 11px; color: var(--muted); }
+.pending-actions { display: flex; gap: 6px; margin-top: 6px; }
+.pending-actions .btn { width: auto; }
+.pending-what { margin-top: 4px; font-size: 11px; color: var(--muted); }
+.pending-what summary { cursor: pointer; color: var(--accent-2); }
+.pending-edit { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pending-edit input { flex: 1; min-width: 90px; }
