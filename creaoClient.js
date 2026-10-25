@@ -124,6 +124,33 @@ function normalizeMail(out) {
 // over 200 characters at a word. Nothing is invented: if the text has fewer than
 // three sentences, the schema still rejects it and the last good reply is kept.
 const tidyBullet = (s) => String(s).replace(/^\s*(?:[-*•·]|\d+[.)])\s*/, '').trim();
+
+// The Digest Writer sometimes answers in Markdown instead of JSON:
+//   ## Morning brief   <paragraph>      ## Team digest   - bullet ...
+// Read that layout: the paragraph under a "brief" heading and the bullets under
+// a "digest" heading, with **bold** / *italic* marks removed. Returns null when
+// either part is missing, so the schema check still fails and the last good
+// reply is kept. Only the agent's own text is used.
+function digestFromMarkdown(text) {
+  const plain = (s) => s.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/(^|\W)\*([^*\s][^*]*)\*(?=\W|$)/g, '$1$2').replace(/\s+/g, ' ').trim();
+  const sections = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const h = line.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if (h) sections.push({ heading: h[1].toLowerCase(), lines: [] });
+    else if (sections.length) sections[sections.length - 1].lines.push(line);
+  }
+  const isBullet = (l) => /^\s*(?:[-*•·]|\d+[.)])\s+/.test(l);
+  const briefSec = sections.find((s) => /brief/.test(s.heading) && s.lines.some((l) => l.trim() && !isBullet(l)));
+  const digestSec = sections.find((s) => /digest/.test(s.heading) && s.lines.some(isBullet));
+  if (!briefSec || !digestSec) return null;
+  let brief = plain(briefSec.lines.filter((l) => l.trim() && !isBullet(l)).join(' '));
+  if (brief.length > 900) brief = brief.slice(0, 899).replace(/\s+\S*$/, '') + '…';
+  return { morning_brief: brief, team_digest: digestSec.lines.filter(isBullet).map((l) => plain(tidyBullet(l))).filter(Boolean) };
+}
+// Where a role's JSON comes from: a JSON object, or (Digest only) its Markdown layout.
+function parseReply(role, text) {
+  return extractJson(text) || (role === 'DIGEST' ? digestFromMarkdown(text) : null);
+}
 function normalizeDigest(out) {
   if (!out || typeof out !== 'object') return out;
   const raw = out.team_digest;
@@ -266,7 +293,7 @@ function createClient(opts = {}) {
     if (r.chatText && r.chatText !== candidates[0]) candidates.push(r.chatText);
     let firstErr = null;
     for (const c of candidates) {
-      try { return { output: checkOutput(role, extractJson(c)), from: 'text' }; }
+      try { return { output: checkOutput(role, parseReply(role, c)), from: 'text' }; }
       catch (err) { firstErr = firstErr || err; }
     }
     const arts = Array.isArray(r.artifacts) ? r.artifacts : [];
@@ -275,7 +302,7 @@ function createClient(opts = {}) {
     for (const a of ordered.slice(0, 3)) {
       try {
         const text = await downloadArtifact(role, runId, a.id);
-        return { output: checkOutput(role, extractJson(text)), from: 'artifact' };
+        return { output: checkOutput(role, parseReply(role, text)), from: 'artifact' };
       } catch (err) { artifactErr = artifactErr || err; }
     }
     // Report both places: the text is sometimes only a summary of an attached
@@ -438,5 +465,5 @@ function geminiAllowed(checkboxOn, mailMode) {
 
 module.exports = {
   createClient, ROLES, ROLE_INFO, BASE_URL, geminiAllowed,
-  extractJson, runReply, normalizeMail, normalizeDigest, resolveMockTokens, stableStringify, hashOf
+  extractJson, runReply, normalizeMail, normalizeDigest, digestFromMarkdown, resolveMockTokens, stableStringify, hashOf
 };

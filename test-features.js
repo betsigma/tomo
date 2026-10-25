@@ -1296,6 +1296,32 @@ check('a digest returned as one bulleted string is split into bullets', () => {
   assert.strictEqual(creao.normalizeDigest(arr), arr, 'a valid array is left alone');
 });
 
+check('a digest written in Markdown (no JSON) is read from its headings', () => {
+  const md = [
+    '# Morning Brief — Sunday, October 25, 2026',
+    '',
+    '## ☀️ Morning brief',
+    '',
+    'Good morning! Your soonest deadline is the **Lab 5 report**, due today.',
+    'Your first block is **4:15–4:45 PM**.',
+    '',
+    '## 💬 Team digest (Discord)',
+    '',
+    '- **Due today:** Lab 5 report and the *Binti* reading notes.',
+    '- **Tomorrow:** Peer review workshop, printed draft required.',
+    '- **Crunch week:** 10 deadlines, about 855 minutes.',
+    '2026-10-19'
+  ].join('\n');
+  const out = creao.normalizeDigest(creao.digestFromMarkdown(md));
+  assert.strictEqual(out.morning_brief, 'Good morning! Your soonest deadline is the Lab 5 report, due today. Your first block is 4:15–4:45 PM.');
+  assert.deepStrictEqual(out.team_digest, [
+    'Due today: Lab 5 report and the Binti reading notes.',
+    'Tomorrow: Peer review workshop, printed draft required.',
+    'Crunch week: 10 deadlines, about 855 minutes.'
+  ]);
+  assert.strictEqual(creao.digestFromMarkdown('Just some prose with no headings.'), null, 'no layout, no guess');
+});
+
 check('a digest returned as one long paragraph is split into its sentences', () => {
   const para = 'Paper 2 is due Tuesday at midnight. Exam review sessions run Wednesday afternoon in S34. ' +
     'Crunch week starts Monday with eight deadlines. Start the Week 6 arrays programs early so Thursday stays free.';
