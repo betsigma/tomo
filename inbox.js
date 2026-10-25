@@ -55,10 +55,16 @@
         what: [mail.summary, mail.reason].filter(Boolean).join(' — ')
       });
     }
-    // Meetings the Analyst found in Discord announcements.
+    // Meetings the Analyst found in Discord announcements. Reposts of the same
+    // meeting share a key; keep one, preferring the copy that has an end time.
+    const discordAt = new Map();
     for (const ev of (o.ANALYST && o.ANALYST.events) || []) {
-      out.push({
-        key: 'agent:discord:' + String(ev.date || '').slice(0, 10) + ':' + slug(ev.title),
+      const key = 'agent:discord:' + String(ev.date || '').slice(0, 10) + ':' + slug(ev.title);
+      const at = discordAt.has(key) ? discordAt.get(key) : out.length;
+      if (at < out.length && (out[at].endTime || !ev.end_time)) continue;
+      discordAt.set(key, at);
+      out[at] = {
+        key,
         kind: 'discord',
         title: ev.title || 'Discord event',
         start: String(ev.date || '').slice(0, 10),
@@ -68,7 +74,7 @@
         reason: 'From a Discord announcement',
         summary: ev.summary || '',
         what: [ev.summary, 'From a Discord announcement'].filter(Boolean).join(' — ')
-      });
+      };
     }
     for (const t of (o.ANALYST && o.ANALYST.tasks) || []) {
       if (t.source !== 'email') continue;

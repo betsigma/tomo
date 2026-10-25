@@ -1129,6 +1129,15 @@ check('Discord messages go to the Analyst, and its dates wait in the Inbox', () 
   assert.strictEqual(Inbox.pendingProposals(outputs, store).length, 0);
 });
 
+check('the same Discord meeting posted twice shows once, with its end time', () => {
+  const ev = (end) => ({ title: 'Club meeting', date: '2026-10-29', start_time: '17:00', end_time: end, location: 'S34', summary: '', source_id: end || 'x' });
+  for (const order of [[ev(''), ev('18:00')], [ev('18:00'), ev('')]]) {
+    const list = Inbox.listProposals({ ANALYST: { tasks: [], crunch_weeks: [], events: order } }).filter((p) => p.kind === 'discord');
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0].endTime, '18:00');
+  }
+});
+
 check('an Analyst task with an empty id gets a stable id from its title', () => {
   const T = require('./teamInputs.js');
   const out = T.fillTaskIds([
