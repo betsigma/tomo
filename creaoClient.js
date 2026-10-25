@@ -278,9 +278,13 @@ function createClient(opts = {}) {
         return { output: checkOutput(role, extractJson(text)), from: 'artifact' };
       } catch (err) { artifactErr = artifactErr || err; }
     }
-    // When the agent attached a file, its problem is the useful one: the text is
-    // often just a summary of that file.
-    if (artifactErr) artifactErr.message = 'Attached file: ' + artifactErr.message;
+    // Report both places: the text is sometimes only a summary of an attached
+    // file, and sometimes the file is prose while the text holds the JSON.
+    if (artifactErr && firstErr) {
+      const both = new Error(`Reply text: ${firstErr.message} · Attached file: ${artifactErr.message}`);
+      both.schemaErrors = firstErr.schemaErrors || artifactErr.schemaErrors;
+      throw both;
+    }
     throw artifactErr || firstErr || new Error('The agent reply contained no JSON object.');
   }
 
@@ -351,9 +355,9 @@ function createClient(opts = {}) {
       return { ok: true, output, source, mode, cached: false, at: t.toISOString(), runId };
     };
     const fallback = (message, extra = {}) => {
-      cache.errors[role] = { at: t.toISOString(), message };
+      cache.errors[role] = { at: t.toISOString(), message, runId: extra.runId || null };
       saveCache(cache);
-      log(`[creao] ${role} failed: ${message}`);
+      log(`[creao] ${role} failed: ${message}` + (extra.runId ? ` (run ${extra.runId})` : ''));
       if (prev) return { ok: false, error: message, output: prev.output, source: prev.source, mode, stale: true, at: prev.at, ...extra };
       let output = null;
       try { output = checkOutput(role, loadMock(role)); } catch { /* no mock either */ }
@@ -374,13 +378,16 @@ function createClient(opts = {}) {
     cache.runLog[role] = [...recent, t.toISOString()];
     saveCache(cache);
 
+    let runId = null;
     try {
-      const { run: finished, runId } = await runLive(role, toInputs(role, input), onStatus);
-      const { output, from } = await outputFromRun(role, finished, runId);
+      const live = await runLive(role, toInputs(role, input), onStatus);
+      runId = live.runId;
+      const { output, from } = await outputFromRun(role, live.run, runId);
       log(`[creao] ${role} completed (run ${runId}, JSON from ${from})`);
       return remember(output, 'live', runId);
     } catch (err) {
-      return fallback(String((err && err.message) || err), { runId: err && err.runId });
+      // Keep the run id so a bad reply can be re-read for free (test:creao --run <id>).
+      return fallback(String((err && err.message) || err), { runId: (err && err.runId) || runId });
     }
   }
 
@@ -419,7 +426,7 @@ function createClient(opts = {}) {
     return http('GET', `${BASE_URL}/apps/${encodeURIComponent(appId)}/runs/${encodeURIComponent(runId)}`, key);
   }
 
-  return { run, status, lastOutput, modeOf, configured, toInputs, runLive, getRun, outputFromRun, checkOutput, loadMock };
+  return { run, status, lastOutput, modeOf, configured, toInputs, runLive, getRun, outputFromRun, checkOutput, loadMock, downloadArtifact };
 }
 
 // The local Gmail path still runs. Gemini is the only call this turns off,

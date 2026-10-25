@@ -18,6 +18,8 @@ require(path.join(ROOT, 'env.js')).loadEnv(path.join(ROOT, '.env'));
 const { createClient, ROLES, ROLE_INFO, extractJson, runReply } = require(path.join(ROOT, 'creaoClient.js'));
 
 const recheck = process.argv.includes('--recheck');
+// --run <id>: re-read one existing run (free, no new run), e.g. a failed app run.
+const runArg = (() => { const i = process.argv.indexOf('--run'); return i > 0 ? process.argv[i + 1] : null; })();
 const LAST_FILE = path.join(ROOT, 'data', 'creao-last-test.json');
 const lastRuns = (() => { try { return JSON.parse(fs.readFileSync(LAST_FILE, 'utf8')); } catch { return {}; } })();
 const client = createClient({ rootDir: ROOT, log: () => {} });
@@ -99,6 +101,12 @@ async function diagnose(role, run, runId) {
   const places = [['result.text', r.text], ['result.chatText', r.chatText]];
   for (const a of (Array.isArray(r.artifacts) ? r.artifacts : [])) {
     console.log(`  ${role}: artifact type=${a.type} title=${a.title}`);
+    // Describe the file without printing it: size, first character, JSON shape.
+    try {
+      const text = await client.downloadArtifact(role, runId, a.id);
+      const parsed = extractJson(text);
+      console.log(`      file: ${text.length} chars, starts with ${JSON.stringify(text.trim().charAt(0))}, JSON: ${parsed ? shape(parsed, 1) : 'none'}`);
+    } catch (e) { console.log(`      file: could not download (${e.message})`); }
   }
   for (const [label, val] of places) {
     if (val == null) continue;
@@ -120,7 +128,10 @@ async function testRole(role) {
   if (!client.configured(role)) return { role, result: 'SKIPPED', note: `no CREAO_APP_ID_${role} / CREAO_KEY_${role} -> app uses mock` };
   try {
     let run, runId;
-    if (recheck) {
+    if (runArg) {
+      runId = runArg;
+      run = await client.getRun(role, runId);
+    } else if (recheck) {
       runId = lastRuns[role];
       if (!runId) return { role, result: 'SKIPPED', note: 'no saved run; run without --recheck first' };
       run = await client.getRun(role, runId);
