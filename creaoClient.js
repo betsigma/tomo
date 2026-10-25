@@ -118,6 +118,19 @@ function normalizeMail(out) {
   };
 }
 
+// The Digest Writer sometimes returns team_digest as one bulleted string instead
+// of an array. Split it into bullets (dropping "-", "•", "*" or "1." markers);
+// the schema still checks the count and lengths afterwards.
+function normalizeDigest(out) {
+  if (!out || typeof out !== 'object' || typeof out.team_digest !== 'string') return out;
+  const bullets = out.team_digest
+    .split(/\r?\n|(?:^|\s)[•·]\s+/)
+    .map((s) => s.replace(/^\s*(?:[-*•·]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  return { ...out, team_digest: bullets };
+}
+
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -188,7 +201,7 @@ function createClient(opts = {}) {
   // Normalize + validate one parsed output. Throws a friendly error on failure.
   function checkOutput(role, parsed) {
     if (!parsed) throw new Error('The agent reply contained no JSON object.');
-    const out = role === 'MAIL' ? normalizeMail(parsed) : parsed;
+    const out = role === 'MAIL' ? normalizeMail(parsed) : role === 'DIGEST' ? normalizeDigest(parsed) : parsed;
     const errors = validate(schemaFor(role), out);
     if (errors.length) {
       const e = new Error('Reply did not match the schema: ' + errors.slice(0, 3).join('; '));
@@ -408,5 +421,5 @@ function geminiAllowed(checkboxOn, mailMode) {
 
 module.exports = {
   createClient, ROLES, ROLE_INFO, BASE_URL, geminiAllowed,
-  extractJson, runReply, normalizeMail, resolveMockTokens, stableStringify, hashOf
+  extractJson, runReply, normalizeMail, normalizeDigest, resolveMockTokens, stableStringify, hashOf
 };

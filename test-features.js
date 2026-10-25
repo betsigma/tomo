@@ -1289,6 +1289,13 @@ check('finished tasks are not sent back to the Analyst as overdue', () => {
   assert.deepStrictEqual(built.input.tasks.map((t) => t.title), ['Week 6 Programming']);
 });
 
+check('a digest returned as one bulleted string is split into bullets', () => {
+  const out = creao.normalizeDigest({ morning_brief: 'Hi.', team_digest: '- Lab due Friday.\n• Essay draft tonight.\n3. Ask for help early.\n\n' });
+  assert.deepStrictEqual(out.team_digest, ['Lab due Friday.', 'Essay draft tonight.', 'Ask for help early.']);
+  const arr = { morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] };
+  assert.strictEqual(creao.normalizeDigest(arr), arr, 'an array is left alone');
+});
+
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 
