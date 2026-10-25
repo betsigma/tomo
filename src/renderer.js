@@ -468,7 +468,8 @@ function saveProposalEdit(key) {
 function applyTeam(state) {
   teamState = state || null;
   if (teamState && typeof Inbox !== 'undefined') {
-    const added = Inbox.autoAddTasks(store, teamState.outputs);
+    const merged = Inbox.mergeDuplicateTodos(store);
+    const added = Inbox.autoAddTasks(store, teamState.outputs) + merged;
     const changed = Inbox.applyTaskUpdates(store, teamState.outputs);
     if (added || changed) save();
   }
@@ -549,6 +550,37 @@ async function refreshEstimateCard() {
   }
 }
 
+// The assignment's parts (Analyst deliverables, e.g. p51.cpp, p52.cpp) as a
+// tickable list under the task, plus how many study sessions are planned.
+const openParts = new Set();   // task ids whose parts list is expanded
+function todoParts(t) {
+  const parts = Array.isArray(t.deliverables) ? t.deliverables : [];
+  const group = blockGroup(t.title);
+  const sessions = (store.events || []).filter((e) => e.status === 'active' && isStudyBlock(e) &&
+    blockGroup(e.title) === group).length;
+  if (parts.length < 2 && !sessions) return '';
+  const done = new Set(t.partsDone || []);
+  const label = [
+    parts.length >= 2 ? `${parts.length} parts · ${parts.filter((p) => done.has(p)).length} done` : '',
+    sessions ? `${sessions} study session${sessions === 1 ? '' : 's'}` : ''
+  ].filter(Boolean).join(' · ');
+  const items = parts.length >= 2 ? parts.map((p) => `<li><label>
+      <input type="checkbox" data-action="toggle-part" data-id="${esc(t.id)}" data-part="${esc(p)}" ${done.has(p) ? 'checked' : ''} />
+      <span>${esc(p)}</span></label></li>`).join('') : '';
+  return `<details class="todo-parts" data-parts-for="${esc(t.id)}" ${openParts.has(t.id) ? 'open' : ''}>
+    <summary>${esc(label)}</summary>${items ? `<ul>${items}</ul>` : ''}</details>`;
+}
+
+function togglePart(id, part, on) {
+  const t = store.todos.find((x) => x.id === id);
+  if (!t) return;
+  const done = new Set(t.partsDone || []);
+  if (on) done.add(part); else done.delete(part);
+  t.partsDone = [...done];
+  save();
+  renderTodos();
+}
+
 function todoRow(t, dueIso) {
   const due = dueIso !== undefined ? dueIso : localDateOf(t.due);
   const today = todayStr();
@@ -564,6 +596,7 @@ function todoRow(t, dueIso) {
   const sub = (loc || course || pomo || meta) ? `<span class="todo-sub">${loc}${course}${pomo}${meta}</span>` : '';
   const summary = taskSummary(t.id);
   const summaryHtml = summary ? `<span class="todo-summary">${esc(summary)}</span>` : '';
+  const partsHtml = todoParts(t);
   return `
     <li class="${cls}">
       ${dot}
@@ -572,6 +605,7 @@ function todoRow(t, dueIso) {
         <span class="todo-text clickable" data-action="open-todo" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</span>
         ${summaryHtml}
         ${sub}
+        ${partsHtml}
       </span>
       <button class="del" data-action="delete-todo" data-id="${t.id}" title="Delete">&#10005;</button>
     </li>`;
@@ -1128,10 +1162,18 @@ function toFCEvent(ev, opts = {}) {
 // Every event (and every generated recurrence occurrence) inside [from, to).
 function eventsInRange(from, to) {
   const out = [];
+  const blocks = new Map();   // assignment -> its study blocks in view
+  const finished = new Set((store.todos || []).filter((t) => t.done).map((t) => blockGroup(t.title)));
   for (const e of activeEvents()) {
     const rec = e.recurrence;
     if (!rec || !rec.freq || rec.freq === 'none') {
-      if (e.start >= from && e.start < to) out.push(toFCEvent(e));
+      if (e.start < from || e.start >= to) continue;
+      if (isStudyBlock(e)) {
+        const k = blockGroup(e.title);
+        if (finished.has(k)) continue;   // no study time left for a finished task
+        if (!blocks.has(k)) blocks.set(k, []);
+        blocks.get(k).push(e);
+      } else out.push(toFCEvent(e));
       continue;
     }
     // Recurring: draw ONLY the occurrences that land in the visible window.
@@ -1140,23 +1182,46 @@ function eventsInRange(from, to) {
       out.push(toFCEvent(occ.view, { id: occ.view.id, done: occ.done, baseId: e.id, date: occ.date }));
     }
   }
+  return out.concat(firstBlockPerTask(blocks, toFCEvent));
+}
+
+function isStudyBlock(e) { return String(e.dedupeKey || '').startsWith('agent:block:'); }
+// Blocks are grouped by assignment title: the Analyst's task id can change between runs.
+function blockGroup(title) { return String(title || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+// One calendar item per assignment instead of every session: its first block in
+// view, labelled with the session count. The task row lists the parts.
+function firstBlockPerTask(groups, toItem) {
+  const out = [];
+  for (const list of groups.values()) {
+    list.sort((a, b) => `${a.start}T${a.time || ''}`.localeCompare(`${b.start}T${b.time || ''}`));
+    const item = toItem(list[0]);
+    if (list.length > 1) item.title += ` · ${list.length} sessions`;
+    item.extendedProps = { ...(item.extendedProps || {}), taskTitle: list[0].title };
+    out.push(item);
+  }
   return out;
 }
 
 // Study blocks still waiting in the Inbox, drawn dashed. Display only: never stored.
 function pendingBlocksInRange(from, to) {
   if (!teamState || typeof Inbox === 'undefined') return [];
-  return Inbox.pendingProposals(teamState.outputs, store)
-    .filter((p) => p.kind === 'block' && p.start >= from && p.start < to)
-    .map((p) => ({
-      id: 'pending:' + p.key,
-      title: p.title,
-      start: p.time ? `${p.start}T${p.time}` : p.start,
-      end: p.time && p.endTime ? `${p.start}T${p.endTime}` : undefined,
-      allDay: !p.time,
-      classNames: ['ev-pending'],
-      extendedProps: { pending: true, source: 'agent' }
-    }));
+  const groups = new Map();
+  for (const p of Inbox.pendingProposals(teamState.outputs, store)) {
+    if (p.kind !== 'block' || p.start < from || p.start >= to) continue;
+    const k = blockGroup(p.title);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  }
+  return firstBlockPerTask(groups, (p) => ({
+    id: 'pending:' + p.key,
+    title: p.title,
+    start: p.time ? `${p.start}T${p.time}` : p.start,
+    end: p.time && p.endTime ? `${p.start}T${p.endTime}` : undefined,
+    allDay: !p.time,
+    classNames: ['ev-pending'],
+    extendedProps: { pending: true, source: 'agent' }
+  }));
 }
 
 // Analyst crunch weeks for the Week sidebar.
@@ -1204,6 +1269,9 @@ function initCalendar() {
       arg.jsEvent.preventDefault();
       console.log('[ui] calendar eventClick', arg.event.id);
       if (arg.event.extendedProps.pending) { setView('inbox'); return; }
+      const taskTitle = arg.event.extendedProps.taskTitle;
+      const task = taskTitle && store.todos.find((t) => !t.done && blockGroup(t.title) === blockGroup(taskTitle));
+      if (task) { openTodoPanel(task.id); return; }
       openEventPanel(arg.event.id);
     },
     // "+N more" -> our own day list instead of FullCalendar's popover.
@@ -2734,10 +2802,18 @@ function wireUI() {
   });
 
   document.body.addEventListener('change', (e) => {
+    const part = e.target.closest('[data-action="toggle-part"]');
+    if (part) { togglePart(part.dataset.id, part.dataset.part, part.checked); return; }
     const box = e.target.closest('[data-action="toggle"]');
     if (!box) return;
     setTaskDone(box.dataset.id, box.checked);
   });
+  // Keep a task's parts list open across re-renders ('toggle' doesn't bubble, so capture it).
+  document.addEventListener('toggle', (e) => {
+    const id = e.target.dataset && e.target.dataset.partsFor;
+    if (!id) return;
+    if (e.target.open) openParts.add(id); else openParts.delete(id);
+  }, true);
   document.body.addEventListener('click', (e) => {
     const hide = e.target.closest('[data-action="hide-email"]');
     if (hide) { hideEmail(hide.dataset.key); return; }

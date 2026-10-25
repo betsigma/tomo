@@ -95,6 +95,11 @@
     return out;
   }
 
+  // Same assignment even if the Analyst gave it a different id on another run.
+  function taskKey(title, due) {
+    return String(title || '').replace(/\s+/g, ' ').trim().toLowerCase() + '|' + String(due || '').slice(0, 10);
+  }
+
   function decided(store) {
     const keys = new Set();
     for (const e of (store && store.events) || []) {
@@ -245,6 +250,7 @@
       summary: t.summary || '',
       urgency_reason: t.urgency_reason || '',
       effort_estimate_minutes: t.effort_estimate_minutes,
+      deliverables: Array.isArray(t.deliverables) ? t.deliverables : [],
       source: t.source || 'canvas'
     }));
   }
@@ -271,16 +277,20 @@
 
   function approvedTaskList(store, proposal, edits) {
     if (!store.todos) store.todos = [];
+    const key = taskKey(proposal.title, proposal.due);
     const hit = store.todos.find((t) => t && (String(t.agentTaskId) === String(proposal.id) ||
-      (t.source === 'agent' && String(t.id) === String(proposal.id))));
+      (t.source === 'agent' && String(t.id) === String(proposal.id)))) ||
+      store.todos.find((t) => t && t.source === 'agent' && taskKey(t.title, t.due) === key);
     const e = edits || {};
     if (hit) {
+      hit.agentTaskId = proposal.id;   // follow the Analyst's current id
       if (e.title) hit.title = e.title;
       if (e.due) hit.due = e.due;
       if (e.time != null) hit.time = e.time;
       hit.summary = proposal.summary || hit.summary || '';
       hit.priority_rank = proposal.priority_rank;
       hit.effort_estimate_minutes = proposal.effort_estimate_minutes;
+      if (proposal.deliverables && proposal.deliverables.length) hit.deliverables = proposal.deliverables;
       return hit;
     }
     const row = {
@@ -298,6 +308,7 @@
       summary: proposal.summary || '',
       priority_rank: proposal.priority_rank,
       effort_estimate_minutes: proposal.effort_estimate_minutes,
+      deliverables: proposal.deliverables || [],
       urgency_reason: proposal.urgency_reason || '',
       agentSource: proposal.source || 'canvas'
     };
@@ -331,6 +342,27 @@
     return (store.todos || []).length - before;
   }
 
+  // One-time cleanup: agent tasks added twice under different ids become one.
+  // Keeps the first row (its id links Focus time), done if either was done.
+  function mergeDuplicateTodos(store) {
+    const first = new Map();
+    let removed = 0;
+    store.todos = ((store && store.todos) || []).filter((t) => {
+      if (!t || t.source !== 'agent') return true;
+      const key = taskKey(t.title, t.due);
+      const keep = first.get(key);
+      if (!keep) { first.set(key, t); return true; }
+      keep.done = !!(keep.done || t.done);
+      keep.pomodoros = Math.max(Number(keep.pomodoros) || 0, Number(t.pomodoros) || 0);
+      keep.partsDone = [...new Set([...(keep.partsDone || []), ...(t.partsDone || [])])];
+      if (t.deliverables && t.deliverables.length) keep.deliverables = t.deliverables;
+      keep.agentTaskId = t.agentTaskId || keep.agentTaskId;   // later rows carry the newer id
+      removed++;
+      return false;
+    });
+    return removed;
+  }
+
   // After a rerun, refresh the summary and priority on tasks already approved.
   function applyTaskUpdates(store, outputs) {
     const tasks = (outputs && outputs.ANALYST && outputs.ANALYST.tasks) || [];
@@ -342,6 +374,10 @@
       if (a.priority_rank != null && hit.priority_rank !== a.priority_rank) { hit.priority_rank = a.priority_rank; changed = true; }
       if (a.effort_estimate_minutes != null && hit.effort_estimate_minutes !== a.effort_estimate_minutes) {
         hit.effort_estimate_minutes = a.effort_estimate_minutes; changed = true;
+      }
+      if (Array.isArray(a.deliverables) && a.deliverables.length &&
+          JSON.stringify(hit.deliverables || []) !== JSON.stringify(a.deliverables)) {
+        hit.deliverables = a.deliverables; changed = true;
       }
     }
     return changed;
@@ -355,7 +391,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

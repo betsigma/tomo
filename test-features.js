@@ -1129,6 +1129,42 @@ check('Discord messages go to the Analyst, and its dates wait in the Inbox', () 
   assert.strictEqual(Inbox.pendingProposals(outputs, store).length, 0);
 });
 
+check('a task the Analyst renames by id stays one task, and old duplicates merge', () => {
+  const task = (id) => ({ id, title: 'Week 6 Programming  Assignments', due_date: '2026-10-31', priority_rank: 1,
+    urgency_reason: '', summary: '', deliverables: [], effort_estimate_minutes: 60, confidence: 'med', source: 'canvas' });
+  const store = { events: [], todos: [] };
+  Inbox.autoAddTasks(store, { ANALYST: { crunch_weeks: [], tasks: [task('mv5wbb0i')] } });
+  store.todos[0].done = true;
+  Inbox.autoAddTasks(store, { ANALYST: { crunch_weeks: [], tasks: [task('canvas:event-assignment-1596651')] } });
+  assert.strictEqual(store.todos.length, 1, 'a new id for the same title and due date is not a new task');
+  assert.strictEqual(store.todos[0].agentTaskId, 'canvas:event-assignment-1596651');
+  assert.strictEqual(store.todos[0].done, true, 'your tick is kept');
+
+  const dupes = { todos: [
+    { id: 'a', source: 'agent', title: 'Quiz 7', due: '2026-10-31', done: true, pomodoros: 2, agentTaskId: 'old' },
+    { id: 'b', source: 'agent', title: 'Quiz  7', due: '2026-10-31', done: false, pomodoros: 0, agentTaskId: 'new' },
+    { id: 'c', source: 'manual', title: 'Quiz 7', due: '2026-10-31' }
+  ] };
+  assert.strictEqual(Inbox.mergeDuplicateTodos(dupes), 1);
+  assert.deepStrictEqual(dupes.todos.map((t) => t.id), ['a', 'c'], 'manual tasks are never merged');
+  assert.strictEqual(dupes.todos[0].agentTaskId, 'new');
+  assert.strictEqual(dupes.todos[0].pomodoros, 2);
+});
+
+check('tasks keep their parts (deliverables)', () => {
+  const parts = ['p51.cpp', 'p52.cpp', 'p53.cpp'];
+  const outputs = { ANALYST: { crunch_weeks: [], tasks: [
+    { id: 'w6', title: 'Week 6 Programming', due_date: '2026-10-31', priority_rank: 1, urgency_reason: '', summary: 's',
+      deliverables: parts, effort_estimate_minutes: 210, confidence: 'high', source: 'canvas' }
+  ] } };
+  const store = { events: [], todos: [] };
+  Inbox.autoAddTasks(store, outputs);
+  assert.deepStrictEqual(store.todos[0].deliverables, parts);
+  outputs.ANALYST.tasks[0].deliverables = parts.concat('p54.cpp');
+  assert.strictEqual(Inbox.applyTaskUpdates(store, outputs), true);
+  assert.strictEqual(store.todos[0].deliverables.length, 4, 'a rerun refreshes the parts');
+});
+
 check('the same Discord meeting posted twice shows once, with its end time', () => {
   const ev = (end) => ({ title: 'Club meeting', date: '2026-10-29', start_time: '17:00', end_time: end, location: 'S34', summary: '', source_id: end || 'x' });
   for (const order of [[ev(''), ev('18:00')], [ev('18:00'), ev('')]]) {
