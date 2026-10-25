@@ -124,17 +124,8 @@
     return put(store, proposal, 'active', edits, id);
   }
 
-  // Study blocks join the calendar automatically, like tasks join the list.
-  // A rejected block leaves a dismissed tombstone, so it never comes back.
-  function autoAddProposals(store, outputs) {
-    const before = (store.events || []).length;
-    for (const p of listProposals(outputs)) {
-      if (p.kind === 'block') approveProposal(store, p, null, () => 'agent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
-    }
-    return (store.events || []).length - before;
-  }
-
-  // Edit an auto-added block in place, keeping its dedupe key.
+  // Edit an approved block in place, keeping its dedupe key. Saving an edit on a
+  // pending block counts as approving it with those edits.
   function editProposal(store, proposal, edits) {
     const hit = ((store && store.events) || []).find((e) => e && e.dedupeKey === proposal.key);
     if (!hit) return approveProposal(store, proposal, edits, () => 'agent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
@@ -343,7 +334,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, autoAddProposals, rejectProposal, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

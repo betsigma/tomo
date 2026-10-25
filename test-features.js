@@ -1084,13 +1084,16 @@ checkAsync('the orchestrator uses the saved planning horizon', async () => {
   assert.deepStrictEqual(analyst.input.tasks.map((t) => t.id), ['late']);
 });
 
-check('study blocks are added to the calendar automatically, and edit keeps the key', () => {
+check('study blocks wait for approval, and edit keeps the key', () => {
   const store = { events: [], todos: [] };
   const outputs = { PLANNER: { proposals: [
     { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T09:00', end: '2026-10-24T09:45', reason: 'free' }
   ] } };
-  assert.strictEqual(Inbox.autoAddProposals(store, outputs), 1);
-  assert.strictEqual(Inbox.autoAddProposals(store, outputs), 0);
+  assert.strictEqual(typeof Inbox.autoAddProposals, 'undefined', 'blocks are never auto-added');
+  assert.strictEqual(Inbox.pendingProposals(outputs, store).length, 1, 'the block waits in the inbox');
+  assert.strictEqual(store.events.length, 0, 'nothing on the calendar yet');
+  Inbox.approveProposal(store, Inbox.listProposals(outputs)[0], null, () => 'ev1');
+  assert.strictEqual(Inbox.pendingProposals(outputs, store).length, 0, 'approved blocks leave the inbox');
   const key = store.events[0].dedupeKey;
   Inbox.editProposal(store, Inbox.listProposals(outputs)[0], { title: 'Lab 5 v2', time: '10:00' });
   assert.strictEqual(store.events.length, 1);

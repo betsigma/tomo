@@ -356,11 +356,10 @@ function dueByTask() {
 
 function pendingMarkup(state) {
   if (typeof Inbox === 'undefined') return '<li class="empty-note">Nothing waiting yet.</li>';
-  const rejected = new Set((store.events || [])
-    .filter((e) => e && e.status === 'dismissed' && e.dedupeKey)
-    .map((e) => e.dedupeKey));
+  // Approved and rejected blocks both leave an event with their key; show only undecided ones.
+  const decided = new Set((store.events || []).map((e) => e && e.dedupeKey).filter(Boolean));
   const raw = ((state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [])
-    .filter((p) => !rejected.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
+    .filter((p) => !decided.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
   const cards = Inbox.groupProposals(raw, dueByTask());
   const singles = Inbox.pendingProposals(state.outputs, store).filter((p) => p.kind !== 'block');
   const html = cards.map(taskCard).concat(singles.map(pendingRow)).join('');
@@ -372,6 +371,7 @@ function taskCard(card) {
   const parts = card.blocks.map((b) => `<li class="pending-part${b.afterDeadline ? ' after-deadline' : ''}">
     <span>${esc(b.label)}${b.afterDeadline ? ' · after deadline' : ''}</span>
     <span class="pending-actions">
+      <button type="button" class="btn small primary" data-action="approve-proposal" data-key="${esc(b.key)}">Approve</button>
       <button type="button" class="btn small" data-action="edit-proposal" data-key="${esc(b.key)}">Edit</button>
       <button type="button" class="btn small" data-action="reject-proposal" data-key="${esc(b.key)}">Reject</button>
     </span>
@@ -390,6 +390,9 @@ function taskCard(card) {
       </summary>
       <ul class="pending-parts">${parts}</ul>
     </details>
+    <div class="pending-actions">
+      <button type="button" class="btn small primary" data-action="approve-card">Approve all ${card.count}</button>
+    </div>
   </li>`;
 }
 
@@ -454,8 +457,7 @@ function applyTeam(state) {
   if (teamState && typeof Inbox !== 'undefined') {
     const added = Inbox.autoAddTasks(store, teamState.outputs);
     const changed = Inbox.applyTaskUpdates(store, teamState.outputs);
-    const blocks = Inbox.autoAddProposals(store, teamState.outputs);
-    if (added || changed || blocks) save();
+    if (added || changed) save();
   }
   renderMorningBrief();
   renderTeam();
@@ -2634,6 +2636,11 @@ function wireUI() {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const key = btn.dataset.key;
+    if (btn.dataset.action === 'approve-card') {
+      const keys = [...btn.closest('.pending-card').querySelectorAll('[data-action="approve-proposal"]')].map((b) => b.dataset.key);
+      keys.forEach((k) => decideProposal(k, 'approve'));
+      return;
+    }
     if (btn.dataset.action === 'edit-proposal') {
       const form = btn.closest('.pending-item').querySelector('.pending-edit');
       if (form) form.classList.toggle('hidden');
