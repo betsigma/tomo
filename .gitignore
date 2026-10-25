@@ -9,3 +9,7 @@ data/
 # Electron build output
 dist/
 out/
+
+# Logs
+*.log
+logs/
