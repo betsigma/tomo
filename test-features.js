@@ -1293,7 +1293,20 @@ check('a digest returned as one bulleted string is split into bullets', () => {
   const out = creao.normalizeDigest({ morning_brief: 'Hi.', team_digest: '- Lab due Friday.\n• Essay draft tonight.\n3. Ask for help early.\n\n' });
   assert.deepStrictEqual(out.team_digest, ['Lab due Friday.', 'Essay draft tonight.', 'Ask for help early.']);
   const arr = { morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] };
-  assert.strictEqual(creao.normalizeDigest(arr), arr, 'an array is left alone');
+  assert.strictEqual(creao.normalizeDigest(arr), arr, 'a valid array is left alone');
+});
+
+check('a digest returned as one long paragraph is split into its sentences', () => {
+  const para = 'Paper 2 is due Tuesday at midnight. Exam review sessions run Wednesday afternoon in S34. ' +
+    'Crunch week starts Monday with eight deadlines. Start the Week 6 arrays programs early so Thursday stays free.';
+  const out = creao.normalizeDigest({ morning_brief: 'Hi.', team_digest: [para] });
+  assert.strictEqual(out.team_digest.length, 4);
+  assert.strictEqual(out.team_digest[0], 'Paper 2 is due Tuesday at midnight.');
+  assert.ok(out.team_digest.every((s) => s.length <= 200));
+  const long = creao.normalizeDigest({ morning_brief: 'Hi.', team_digest: 'One. Two. ' + 'word '.repeat(60) + 'end.' });
+  assert.ok(long.team_digest.every((s) => s.length <= 200), 'an over-long sentence is trimmed at a word');
+  const two = creao.normalizeDigest({ morning_brief: 'Hi.', team_digest: 'Only one. And two.' });
+  assert.strictEqual(two.team_digest.length, 2, 'nothing is invented to reach three');
 });
 
 console.log('\n18c. One door for Discord posts');

@@ -118,17 +118,23 @@ function normalizeMail(out) {
   };
 }
 
-// The Digest Writer sometimes returns team_digest as one bulleted string instead
-// of an array. Split it into bullets (dropping "-", "•", "*" or "1." markers);
-// the schema still checks the count and lengths afterwards.
+// The Digest Writer sometimes returns team_digest as one string, or one long
+// paragraph, instead of 3-6 short bullets. Split it into lines or bullet marks,
+// then into its own sentences if still too few or too long; trim any sentence
+// over 200 characters at a word. Nothing is invented: if the text has fewer than
+// three sentences, the schema still rejects it and the last good reply is kept.
+const tidyBullet = (s) => String(s).replace(/^\s*(?:[-*•·]|\d+[.)])\s*/, '').trim();
 function normalizeDigest(out) {
-  if (!out || typeof out !== 'object' || typeof out.team_digest !== 'string') return out;
-  const bullets = out.team_digest
-    .split(/\r?\n|(?:^|\s)[•·]\s+/)
-    .map((s) => s.replace(/^\s*(?:[-*•·]|\d+[.)])\s*/, '').trim())
-    .filter(Boolean)
-    .slice(0, 6);
-  return { ...out, team_digest: bullets };
+  if (!out || typeof out !== 'object') return out;
+  const raw = out.team_digest;
+  const fine = Array.isArray(raw) && raw.length >= 3 && raw.length <= 6 && raw.every((s) => typeof s === 'string' && s.length <= 200);
+  if (fine || (!Array.isArray(raw) && typeof raw !== 'string')) return out;
+  let items = [].concat(raw).flatMap((s) => String(s).split(/\r?\n|(?:^|\s)[•·]\s+/)).map(tidyBullet).filter(Boolean);
+  if (items.length < 3 || items.some((s) => s.length > 200)) {
+    items = items.flatMap((s) => s.split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/)).map(tidyBullet).filter(Boolean);
+  }
+  items = items.map((s) => (s.length > 200 ? s.slice(0, 199).replace(/\s+\S*$/, '') + '…' : s)).slice(0, 6);
+  return { ...out, team_digest: items };
 }
 
 function localDate(d) {
