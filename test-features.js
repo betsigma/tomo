@@ -142,7 +142,7 @@ check('an embed title is preferred over the message text', () => {
     embeds: [{ title: 'Meeting this Friday at 3pm' }], author: { username: 'Beoz' }
   }, 'announcements');
   assert.strictEqual(m.content, 'Meeting this Friday at 3pm');
-  assert.ok(m.event, 'date detected from embed title');
+  assert.ok(m.text.includes('Meeting this Friday at 3pm'), 'embed text is passed on for the Analyst');
 });
 check('a real first line is used when there is no embed', () => {
   const { normalizeDiscordMessage } = require('./discord.js');
@@ -1100,6 +1100,33 @@ check('study blocks wait for approval, and edit keeps the key', () => {
   assert.strictEqual(store.events[0].title, 'Lab 5 v2');
   assert.strictEqual(store.events[0].time, '10:00');
   assert.strictEqual(store.events[0].dedupeKey, key);
+});
+
+check('Discord messages go to the Analyst, and its dates wait in the Inbox', () => {
+  const T = require('./teamInputs.js');
+  const { normalizeDiscordMessage } = require('./discord.js');
+  const now = new Date(2026, 9, 25, 12, 0, 0);
+  const msg = normalizeDiscordMessage({
+    id: '9', timestamp: '2026-10-25T10:00:00Z', author: { username: 'Club' },
+    content: 'Women in STEM meeting\nThursday Oct 29, 5pm in S34'
+  }, 'announcements');
+  assert.strictEqual(msg.event, undefined, 'no local date parsing');
+  assert.ok(msg.text.includes('Thursday Oct 29'), 'full text, not just the first line');
+  const old = { uid: 'old', content: 'Last month', text: 'Last month', timestamp: '2026-09-01T10:00:00Z' };
+  const built = T.buildAnalystInput({ events: [], todos: [], discord: [msg, old] }, {}, [], now);
+  assert.deepStrictEqual(built.input.discord_messages.map((m) => m.id), ['9'], 'only the last 14 days');
+
+  const store = { events: [], todos: [] };
+  const outputs = { ANALYST: { tasks: [], crunch_weeks: [], events: [
+    { title: 'Women in STEM meeting', date: '2026-10-29', start_time: '17:00', end_time: '18:00', location: 'S34', summary: 'Club meeting.', source_id: '9' }
+  ] } };
+  const pending = Inbox.pendingProposals(outputs, store);
+  assert.strictEqual(pending.length, 1);
+  assert.strictEqual(pending[0].kind, 'discord');
+  assert.strictEqual(store.events.length, 0, 'not on the calendar until approved');
+  Inbox.approveProposal(store, pending[0], null, () => 'd1');
+  assert.strictEqual(store.events[0].time, '17:00');
+  assert.strictEqual(Inbox.pendingProposals(outputs, store).length, 0);
 });
 
 console.log('\n19. Weekly Discord digest');

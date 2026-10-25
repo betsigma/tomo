@@ -40,7 +40,7 @@ Electron app, plain JS with no bundler or framework. FullCalendar is vendored.
 | `preload.js` | `contextBridge` → `window.widgetAPI` (store, window, canvas*, gmail*, llm*, ml*, discord*, teamState, teamRun, onTeamUpdate). |
 | `canvas.js` | Parses the iCal feed with node-ical. Skips recurring events (class meetings). `description` is cut to 4,000 characters. |
 | `gmail.js` | Gmail query builder, filter rules, trust allowlist, **exclusion keywords**, newsletter date parsing, and the `fetchPreview` pipeline (metadata → full body → optional AI → optional ML). |
-| `discord.js`, `textdate.js`, `titles.js` | Discord message normalizing, date detection, HTML/title cleanup. |
+| `discord.js`, `textdate.js`, `titles.js` | Discord message normalizing (dates come from the Analyst), date formatting, HTML/title cleanup. |
 | `llm.js`, `ml.js` | Optional Gemini email extraction; on-device relevance classifier (model cached in `data/models`). Both pre-date CREAO. |
 | `env.js` | No-dependency `.env` loader. Doesn't override existing env vars or print values. |
 | `creaoClient.js` | **CREAO client by role** (§5). |

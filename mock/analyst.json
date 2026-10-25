@@ -51,5 +51,16 @@
   ],
   "crunch_weeks": [
     { "week_start": "{{week+0}}", "reason": "Lab report, calculus quiz and an aid deadline land in the same five days." }
+  ],
+  "events": [
+    {
+      "title": "Women in STEM general meeting",
+      "date": "{{day+3}}",
+      "start_time": "17:00",
+      "end_time": "18:00",
+      "location": "S34",
+      "summary": "Club meeting announced in #announcements; snacks and officer elections.",
+      "source_id": "mock-discord-1"
+    }
   ]
 }

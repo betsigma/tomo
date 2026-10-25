@@ -33,6 +33,23 @@
           "reason": { "type": "string" }
         }
       }
+    },
+    "events": {
+      "$comment": "Dated meetings/events found in discord_messages. Optional so an Analyst without the Discord instruction still validates.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "date", "start_time", "end_time", "location", "summary", "source_id"],
+        "properties": {
+          "title": { "type": "string" },
+          "date": { "type": "string" },
+          "start_time": { "type": "string" },
+          "end_time": { "type": "string" },
+          "location": { "type": "string" },
+          "summary": { "type": "string", "maxLength": 400 },
+          "source_id": { "type": "string" }
+        }
+      }
     }
   }
 }

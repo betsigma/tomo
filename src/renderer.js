@@ -758,12 +758,10 @@ function restoreEmail(key, sender) {
 }
 
 function discordRow(m) {
-  const marker = m.event ? `<span class="discord-event">&#128197; ${esc(formatDue(m.event.start))}</span>` : '';
   return `
     <li class="discord">
       <span class="discord-author">${esc(m.author)}</span>
       <span class="discord-text" title="${esc(m.content)}">${esc(m.content)}</span>
-      ${marker}
     </li>`;
 }
 
@@ -2090,23 +2088,14 @@ async function syncGmail() {
   else if (lcfg.enabled && res.aiHasKey === false) setStatus('AI sorting needs an API key');
 }
 
-// Discord messages that mention a date become purple calendar events.
-function mergeDiscordEvents(messages) {
-  const items = [];
-  for (const m of (messages || [])) {
-    if (!m.event) continue;
-    items.push({ uid: m.uid, title: m.content, start: m.event.start, time: m.event.time, course: m.channelName });
-  }
-  const keep = new Set(items.map((i) => 'discord:' + i.uid));
-  store.events = store.events.filter((ev) => ev.source !== 'discord' || keep.has(ev.dedupeKey));
-  Sync.mergeItems(store, 'discord', items, { makeTodo: false });
-}
+// Discord messages are only read here. The Analyst finds their dates on the next
+// team run and proposes them in the Inbox; old locally-parsed events are cleared.
 async function syncDiscord() {
   const limit = (store.settings.discord || {}).limit || 25;
   const res = await window.widgetAPI.discordFetch(limit);
   if (!res.ok) { setStatus('Discord: ' + res.error); return; }
   store.discord = res.messages || [];
-  mergeDiscordEvents(store.discord);
+  store.events = store.events.filter((ev) => ev.source !== 'discord');
   store.settings.discordMeta = {
     lastSync: new Date().toISOString(),
     count: store.discord.length,

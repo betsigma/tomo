@@ -55,6 +55,21 @@
         what: [mail.summary, mail.reason].filter(Boolean).join(' — ')
       });
     }
+    // Meetings the Analyst found in Discord announcements.
+    for (const ev of (o.ANALYST && o.ANALYST.events) || []) {
+      out.push({
+        key: 'agent:discord:' + String(ev.date || '').slice(0, 10) + ':' + slug(ev.title),
+        kind: 'discord',
+        title: ev.title || 'Discord event',
+        start: String(ev.date || '').slice(0, 10),
+        time: ev.start_time || '',
+        endTime: ev.end_time || '',
+        location: ev.location || '',
+        reason: 'From a Discord announcement',
+        summary: ev.summary || '',
+        what: [ev.summary, 'From a Discord announcement'].filter(Boolean).join(' — ')
+      });
+    }
     for (const t of (o.ANALYST && o.ANALYST.tasks) || []) {
       if (t.source !== 'email') continue;
       const due = splitStamp(t.due_date);

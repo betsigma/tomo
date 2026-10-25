@@ -1,12 +1,10 @@
 // discord.js
 // ---------------------------------------------------------------------------
 // Discord-specific logic that does NOT need the network: turning raw Discord
-// API messages into simple objects for the widget, and spotting a date inside
-// a message (so it can become a purple calendar event).
+// API messages into simple objects for the widget. Dates are NOT found here:
+// the Deadline & Task Analyst reads each message's full text and proposes them.
 // The API calls live in main.js.
 // ---------------------------------------------------------------------------
-
-const { detectEvent } = require('./textdate');
 
 // A followed-announcement crosspost carries a channel label like
 // "Women In Stem De Anza #announcements" instead of the real text. Detect it so
@@ -42,16 +40,18 @@ function normalizeDiscordMessage(m, channelName) {
 
   const author = (m.author && (m.author.global_name || m.author.username)) || 'Discord';
 
-  const item = {
+  // Full text for the Analyst: the date is often not on the first line.
+  const text = [m.content, ...embeds.flatMap((e) => [e && e.title, e && e.description])]
+    .filter(Boolean).join('\n').trim().slice(0, 1000);
+
+  return {
     uid: String(m.id),
     author,
     content,
+    text: content ? text : '',
     channelName: channelName || '',
     timestamp: m.timestamp || ''
   };
-
-  item.event = content ? detectEvent(content) : null;
-  return item;
 }
 
 // The team digest as one Discord message: a heading plus bullet lines.

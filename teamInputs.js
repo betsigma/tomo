@@ -77,6 +77,15 @@ function mergeDuplicateTasks(tasks) {
   return { tasks: kept, merged };
 }
 
+// Recent Discord announcements for the Analyst to read dates from (newest 20, last 14 days).
+function discordMessages(store, now) {
+  const since = addDays(now, -14).getTime();
+  return (store.discord || [])
+    .filter((m) => m && (m.text || m.content) && (!m.timestamp || Date.parse(m.timestamp) >= since))
+    .slice(0, 20)
+    .map((m) => ({ id: m.uid, channel: m.channelName || '', posted_at: m.timestamp || '', text: m.text || m.content }));
+}
+
 function buildAnalystInput(store, analystCache, importantEmails, now = new Date(), opts = {}) {
   const horizonDays = opts.horizonDays == null ? 14 : opts.horizonDays;
   const overdueDays = opts.overdueDays == null ? 3 : opts.overdueDays;
@@ -124,6 +133,7 @@ function buildAnalystInput(store, analystCache, importantEmails, now = new Date(
       important_emails: (importantEmails || []).map((m) => ({
         subject: m.subject, summary: m.summary, event_date: m.event_date || null
       })),
+      discord_messages: discordMessages(store, now),
       today
     },
     hashes,
