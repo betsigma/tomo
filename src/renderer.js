@@ -2154,10 +2154,11 @@ function setView(mode) {
   if (teamView) teamView.classList.toggle('hidden', mode !== 'team');
   const inboxView = document.getElementById('view-inbox');
   if (inboxView) inboxView.classList.toggle('hidden', mode !== 'inbox');
+  // The brief and estimate card belong to the agents, so they show on the Team tab only.
   const brief = document.getElementById('morning-brief');
-  if (brief) brief.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
+  if (brief) brief.classList.toggle('brief-suppressed', mode !== 'team');
   const estimateCard = document.getElementById('estimate-card');
-  if (estimateCard) estimateCard.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
+  if (estimateCard) estimateCard.classList.toggle('brief-suppressed', mode !== 'team');
   document.querySelectorAll('.tab').forEach((tab) => {
     const on = tab.dataset.view === mode;
     tab.classList.toggle('active', on);

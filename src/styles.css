@@ -533,8 +533,8 @@ html.theme-night .fc .fc-event.ev-pending { background: transparent; color: var(
    FullCalendar ships its own CSS. We recolor it to match our theme. */
 #calendar { font-size: 12px; color: var(--text); }
 
-/* Target the inner .fc element — that is where FullCalendar's own variables live. */
-#calendar .fc {
+/* FullCalendar puts the .fc class on #calendar itself, so set its variables there. */
+#calendar.fc {
   --fc-border-color: var(--border);
   --fc-page-bg-color: var(--panel);
   --fc-neutral-bg-color: var(--panel);
@@ -548,7 +548,10 @@ html.theme-night .fc .fc-event.ev-pending { background: transparent; color: var(
   --fc-button-active-border-color: var(--accent);
 }
 #calendar .fc-toolbar-title { font-size: 15px; font-family: "Pixelify Sans", "Nunito", sans-serif; color: var(--text); }
-#calendar .fc-button { box-shadow: none !important; border-radius: 999px !important; transition: background 180ms ease; }
+#calendar .fc-button { box-shadow: none !important; border-radius: 999px !important; transition: background 180ms ease; font-weight: 700; }
+#calendar .fc-button-group { gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+#calendar .fc-button-active { color: #6b2d4f; box-shadow: 0 0 0 1px var(--outline) !important; }
+#calendar .fc-button:focus-visible { outline: 2px solid var(--outline); outline-offset: 1px; }
 #calendar .fc-col-header-cell { background: var(--panel); }
 #calendar .fc-scrollgrid { border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
 
