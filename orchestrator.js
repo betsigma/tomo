@@ -159,7 +159,7 @@ function createOrchestrator(opts) {
       const windows = T.freeWindows(calendar, now(), rules);
       const pIn = {
         ranked_tasks: ranked.slice(0, 12),
-        calendar,
+        calendar: T.busyTimes(calendar),   // free/busy only: never event titles
         free_windows: windows,
         estimate_history: getEstimateHistory(ranked)
       };

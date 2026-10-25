@@ -455,7 +455,13 @@
             <button id="discord-disconnect" class="btn small danger hidden">Disconnect</button>
             <button id="discord-connect" class="btn small primary">Connect</button>
           </div>
-          <label class="field-inline"><span><input id="discord-digest-weekly" type="checkbox" /> Post the team digest here weekly (Monday 9 AM)</span></label>
+          <label class="field-inline"><span><input id="discord-digest-weekly" type="checkbox" /> Ask me to post the team digest weekly (Monday 9 AM)</span></label>
+
+          <h4>Posting to Discord</h4>
+          <p class="hint">Off by default. Every post shows a preview first. While off (or in mock mode) nothing is sent.</p>
+          <label class="field-inline"><span><input id="discord-posting" type="checkbox" /> Allow Tomo to post</span></label>
+          <input id="discord-poll-channel" type="text" placeholder="Post to channel ID (empty = the channel above)" />
+          <input id="discord-display-name" type="text" placeholder="Name teammates see (e.g. Betsy)" />
         </div>
 
         <!-- Gmail re-sync preview: nothing is created until you click Apply -->
@@ -656,6 +662,20 @@
           <span class="spacer"></span>
           <button id="choice-one" class="btn small">This event only</button>
           <button id="choice-all" class="btn small primary">All events</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= DISCORD POST PREVIEW (every post is confirmed here) ================= -->
+    <div id="post-modal" class="modal hidden">
+      <div class="modal-card">
+        <h3>Post to Discord?</h3>
+        <p id="post-target" class="post-target"></p>
+        <div id="post-preview" class="post-preview"></div>
+        <div class="modal-actions">
+          <button id="post-cancel" class="btn small">Cancel</button>
+          <span class="spacer"></span>
+          <button id="post-send" class="btn small primary">Send</button>
         </div>
       </div>
     </div>

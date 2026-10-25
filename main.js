@@ -20,7 +20,7 @@ const { google } = require('googleapis');
 const { normalizeCalendar, fetchText } = require('./canvas');
 const { fetchPreview, isTrusted, extractBodyText } = require('./gmail');
 const { isJunkTitle } = require('./titles');
-const { normalizeDiscordMessage, digestMessage, weeklyDue } = require('./discord');
+const { normalizeDiscordMessage, digestMessage, weeklyDue, buildPost, pollAsText, countVotes, mockVotes, NUMBERS, postMode: discordPostMode } = require('./discord');
 const llm = require('./llm');
 const { RelevanceModel } = require('./ml');
 const { createClient, geminiAllowed } = require('./creaoClient');
@@ -681,39 +681,113 @@ function loadDigestLog() {
   try { return JSON.parse(fs.readFileSync(DIGEST_LOG, 'utf8')); } catch { return {}; }
 }
 
-// Post the latest Digest Writer output to the connected Discord channel.
-async function postDigest({ force = false } = {}) {
+async function discordPut(apiPath, token) {
+  const res = await fetch('https://discord.com/api/v10' + apiPath, { method: 'PUT', headers: { Authorization: 'Bot ' + token } });
+  if (res.status === 403) throw new Error('Bot lacks access (403). Allow "Add Reactions" in that channel.');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+}
+
+// ---------------------------------------------------------------------------
+// ONE door for every Discord post. Posting is off by default; the renderer shows
+// a preview with the "Posting to #channel" label and only sends after a confirm;
+// with posting off or CREAO_MODE=mock nothing is sent and the reply says so.
+// Message text is never logged.
+// ---------------------------------------------------------------------------
+const channelNames = {};
+function postSettings() {
+  const d = ((loadStore().settings || {}).discord) || {};
+  return { on: !!d.posting, pollChannelId: String(d.pollChannelId || '').trim() };
+}
+const postMode = () => discordPostMode(postSettings().on, process.env.CREAO_MODE);
+// Posts go to the poll channel from Settings, or the connected channel when it's empty.
+async function postTarget() {
   const s = loadSecrets();
   const token = decryptSecret(s.discordToken);
-  const channelId = decryptSecret(s.discordChannelId);
-  if (!token || !channelId) return { ok: false, error: 'Discord is not connected' };
-
+  const channelId = postSettings().pollChannelId || decryptSecret(s.discordChannelId) || '';
+  if (channelId && token && !channelNames[channelId]) {
+    try { channelNames[channelId] = (await discordGet(`/channels/${channelId}`, token)).name; } catch { /* label shows the id */ }
+  }
+  return { token, channelId, label: channelId ? '#' + (channelNames[channelId] || channelId) : 'no channel set' };
+}
+// {type:'digest'} becomes the latest Digest Writer bullets; other requests pass through.
+function resolvePost(req) {
+  if (!req || req.type !== 'digest') return req;
   let outputs = {};
   try { outputs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'agent-team.json'), 'utf8')).outputs || {}; }
   catch { /* no team run yet */ }
   const digest = (outputs.DIGEST && outputs.DIGEST.team_digest) || [];
-  if (!digest.length) return { ok: false, error: 'Run the team first; no digest yet.' };
+  return digest.length ? { type: 'text', text: digestMessage(digest), digest: true } : null;
+}
 
-  const text = digestMessage(digest);
+ipcMain.handle('discord-post-preview', async (_e, req) => {
+  const r = resolvePost(req);
+  if (!r) return { ok: false, error: 'Run the team first; no digest yet.' };
+  const target = await postTarget();
+  return { ok: true, mode: postMode(), channel: target.label, post: buildPost(r) };
+});
+
+ipcMain.handle('discord-post-send', async (_e, req) => {
+  const r = resolvePost(req);
+  if (!r) return { ok: false, error: 'Run the team first; no digest yet.' };
+  const post = buildPost(r);
+  const mode = postMode();
+  if (mode !== 'live') return { ok: true, mock: true, mode, messageId: 'mock-' + Date.now(), method: post.options ? 'poll' : 'text' };
+  const { token, channelId, label } = await postTarget();
+  if (!token || !channelId) return { ok: false, error: 'Discord is not connected' };
+  const url = `/channels/${channelId}/messages`;
   try {
-    await discordPost(`/channels/${channelId}/messages`, token, { content: text });
-    ensureDataDir();
-    writeJsonAtomic(DIGEST_LOG, { lastPostedAt: new Date().toISOString() });
-    console.log(`[discord] digest posted (${digest.length} bullets)`);
-    return { ok: true, count: digest.length, force };
+    if (!post.options) {
+      const m = await discordPost(url, token, { content: post.content });
+      if (r.digest) { ensureDataDir(); writeJsonAtomic(DIGEST_LOG, { lastPostedAt: new Date().toISOString() }); }
+      console.log('[discord] posted a message to ' + label);
+      return { ok: true, messageId: m.id, channelId, method: 'text', channel: label };
+    }
+    try {
+      const m = await discordPost(url, token, { poll: {
+        question: { text: post.question },
+        answers: post.options.map((text) => ({ poll_media: { text } })),
+        duration: 24, allow_multiselect: false
+      } });
+      console.log('[discord] posted a poll to ' + label);
+      return { ok: true, messageId: m.id, channelId, method: 'poll', channel: label };
+    } catch (err) {
+      if (!/403/.test(err.message)) throw err;
+      // No "Send Polls" permission: numbered options, and the bot adds each number once.
+      const m = await discordPost(url, token, { content: pollAsText(post) });
+      for (let i = 0; i < post.options.length; i++) {
+        await discordPut(`${url}/${m.id}/reactions/${encodeURIComponent(NUMBERS[i])}/@me`, token);
+      }
+      console.log('[discord] posted a reaction poll to ' + label);
+      return { ok: true, messageId: m.id, channelId, method: 'reactions', channel: label,
+        note: 'Sent with number reactions: the bot lacks "Send Polls".' };
+    }
   } catch (err) {
     return { ok: false, error: String(err.message || err) };
   }
-}
+});
 
-ipcMain.handle('discord-post-digest', () => postDigest({ force: true }));
+// Read votes on a button press (never polled). Mock posts get fake votes.
+ipcMain.handle('discord-read-votes', async (_e, ref) => {
+  const labels = (ref && ref.labels) || [];
+  if (String((ref && ref.messageId) || '').startsWith('mock-')) return { ok: true, ...mockVotes(labels) };
+  const token = decryptSecret(loadSecrets().discordToken);
+  if (!token) return { ok: false, error: 'Discord is not connected' };
+  try {
+    const m = await discordGet(`/channels/${ref.channelId}/messages/${ref.messageId}`, token);
+    return { ok: true, ...countVotes(m, labels) };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+});
 
-async function maybeWeeklyDigest() {
+// Weekly digest: on Monday after 9 AM, ask in the app (preview + confirm), never post silently.
+function maybeWeeklyDigest() {
   const store = loadStore();
   const enabled = !!(store.settings && store.settings.discord && store.settings.discord.digestWeekly);
-  if (!weeklyDue(loadDigestLog().lastPostedAt, new Date(), enabled)) return;
-  const r = await postDigest();
-  if (!r.ok) console.log('[discord] weekly digest skipped: ' + r.error);
+  if (!weeklyDue(loadDigestLog().lastPostedAt, new Date(), enabled) || !mainWindow) return;
+  ensureDataDir();
+  writeJsonAtomic(DIGEST_LOG, { lastPostedAt: new Date().toISOString(), prompted: true });   // ask once a week
+  mainWindow.webContents.send('digest-due');
 }
 setInterval(maybeWeeklyDigest, 30 * 60 * 1000);
 

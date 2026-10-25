@@ -453,6 +453,15 @@ html.theme-night .fc .fc-event.ev-study {
 .day-group summary:hover { background: var(--hover); }
 .day-group .day-list { margin: 2px 0 4px 12px; }
 
+/* Discord post preview */
+.post-target { font-size: 12px; font-weight: 800; color: var(--text); margin: 4px 0 8px; }
+.post-target.is-mock { color: #5c4552; }
+.post-preview {
+  padding: 10px 12px; border: 1px dashed var(--outline); border-radius: 12px;
+  background: var(--hover); font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+.post-preview ol { margin: 6px 0 0 20px; }
+
 /* Day panel in the Week sidebar */
 .day-side {
   margin-bottom: 10px; padding: 10px 10px 12px;

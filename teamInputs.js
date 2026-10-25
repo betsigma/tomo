@@ -212,6 +212,11 @@ function buildCalendar(store, now = new Date(), days = 7) {
   return out.sort((a, b) => a.start.localeCompare(b.start));
 }
 
+// What an agent may see of the calendar: start and end times, nothing else.
+function busyTimes(calendar) {
+  return (calendar || []).map((c) => ({ start: c.start, end: c.end }));
+}
+
 // Gaps between busy blocks inside each day's study hours, starting from now.
 // A dayEnd at or before dayStart ends after midnight; opts.quiet times count as busy.
 function freeWindows(calendar, now = new Date(), opts = {}) {
@@ -265,5 +270,5 @@ function checkProposals(proposals, calendar, windows) {
 
 module.exports = {
   localDate, localStamp, parseStamp, contentHash, usefulDescription,
-  buildAnalystInput, mergeAnalyst, mergeDuplicateTasks, buildCalendar, freeWindows, checkProposals, fillTaskIds
+  buildAnalystInput, mergeAnalyst, mergeDuplicateTasks, buildCalendar, freeWindows, checkProposals, fillTaskIds, busyTimes
 };

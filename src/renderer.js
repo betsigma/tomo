@@ -50,7 +50,7 @@ let store = {
     ml: { enabled: false, seeded: false },
     timer: { work: 25, break: 5, notify: true, sound: true },
     music: { track: 0, shuffle: false, loop: false },
-    discord: { limit: 25, digestWeekly: false },
+    discord: { limit: 25, digestWeekly: false, posting: false, pollChannelId: '', displayName: 'Betsy' },
     discordMeta: {},
     team: { horizonDays: 14 },
     mailHidden: [],
@@ -1601,6 +1601,38 @@ function showPopup(node) {
   node.classList.remove('hidden');
 }
 
+// Every Discord post goes through here: a preview showing exactly what would be sent
+// and where, then main only sends after Send. With posting off or in mock mode the
+// reply is marked mock and nothing leaves the app. Resolves the send result or null.
+let postResolve = null;
+async function confirmPost(req) {
+  const pre = await window.widgetAPI.discordPostPreview(req);
+  if (!pre.ok) { setStatus('Discord: ' + pre.error); return null; }
+  const live = pre.mode === 'live';
+  setText('post-target', live ? `Posting to ${pre.channel}`
+    : pre.mode === 'mock' ? `Mock mode: nothing will be sent (target ${pre.channel})`
+      : `Posting is off: preview only (target ${pre.channel}). Turn it on in Settings.`);
+  el('post-target').classList.toggle('is-mock', !live);
+  const p = pre.post;
+  setHTML('post-preview', p.options
+    ? `<strong>${esc(p.question)}</strong><ol>${p.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ol>`
+    : `<p>${esc(p.content)}</p>`);
+  el('post-send').textContent = live ? 'Send' : 'Show as sent (mock)';
+  showPopup(el('post-modal'));
+  const go = await new Promise((resolve) => { postResolve = resolve; });
+  if (!go) return null;
+  const r = await window.widgetAPI.discordPostSend(req);
+  if (!r.ok) { setStatus('Discord: ' + r.error); return null; }
+  setStatus(r.mock ? 'Mock: shown as sent, nothing posted' : `Posted to ${r.channel}` + (r.note ? ` · ${r.note}` : ''));
+  return r;
+}
+function closePostModal(go) {
+  el('post-modal').classList.add('hidden');
+  const r = postResolve;
+  postResolve = null;
+  if (r) r(go);
+}
+
 // "This event only" / "All events" chooser. Resolves 'one', 'all' or null.
 let choiceResolve = null;
 function askScope(title, text) {
@@ -2511,6 +2543,10 @@ async function openSettings() {
   updateDiscordUI();
   const digestBox = document.getElementById('discord-digest-weekly');
   if (digestBox) digestBox.checked = !!(store.settings.discord && store.settings.discord.digestWeekly);
+  const dset = store.settings.discord || {};
+  el('discord-posting').checked = !!dset.posting;
+  el('discord-poll-channel').value = dset.pollChannelId || '';
+  el('discord-display-name').value = dset.displayName || 'Betsy';
 
   refreshMinutesInput.value = store.settings.refreshMinutes;
   if (fDeadlineWindow) fDeadlineWindow.value = store.settings.deadlineWindowDays || 2;
@@ -2804,6 +2840,13 @@ function wireSettings() {
     save();
     setStatus(digestWeekly.checked ? 'Weekly digest on' : 'Weekly digest off');
   });
+  const setDiscord = (patch) => { store.settings.discord = { ...(store.settings.discord || {}), ...patch }; save(); };
+  on('discord-posting', 'change', (e) => {
+    setDiscord({ posting: e.target.checked });
+    setStatus(e.target.checked ? 'Posting to Discord allowed (always with a preview)' : 'Posting to Discord off');
+  });
+  on('discord-poll-channel', 'change', (e) => setDiscord({ pollChannelId: e.target.value.trim() }));
+  on('discord-display-name', 'change', (e) => setDiscord({ displayName: e.target.value.trim() || 'Betsy' }));
   discordConnectBtn.addEventListener('click', async () => {
     const token = discordTokenInput.value.trim();
     const channel = discordChannelInput.value.trim();
@@ -2894,11 +2937,10 @@ function wireUI() {
     if (!window.widgetAPI.teamRun) return;
     window.widgetAPI.teamRun().then(applyTeam).catch((err) => console.warn('[team] ' + err.message));
   });
-  on('digest-post', 'click', async () => {
-    if (!window.widgetAPI.discordPostDigest) return;
-    const r = await window.widgetAPI.discordPostDigest();
-    setStatus(r.ok ? 'Digest posted to Discord' : 'Discord: ' + r.error);
-  });
+  on('digest-post', 'click', () => confirmPost({ type: 'digest' }));
+  if (window.widgetAPI.onDigestDue) window.widgetAPI.onDigestDue(() => confirmPost({ type: 'digest' }));
+  on('post-send', 'click', () => closePostModal(true));
+  on('post-cancel', 'click', () => closePostModal(false));
   const newTaskList = document.getElementById('team-tasks');
   if (newTaskList) newTaskList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');

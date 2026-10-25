@@ -50,7 +50,11 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   discordStatus: () => ipcRenderer.invoke('discord-status'),
   discordSetConfig: (token, channelId) => ipcRenderer.invoke('discord-set-config', token, channelId),
   discordFetch: (limit) => ipcRenderer.invoke('discord-fetch', limit),
-  discordPostDigest: () => ipcRenderer.invoke('discord-post-digest'),
+  // Every post: preview first, then send after the user confirms.
+  discordPostPreview: (req) => ipcRenderer.invoke('discord-post-preview', req),
+  discordPostSend: (req) => ipcRenderer.invoke('discord-post-send', req),
+  discordReadVotes: (ref) => ipcRenderer.invoke('discord-read-votes', ref),
+  onDigestDue: (cb) => ipcRenderer.on('digest-due', () => cb()),
   discordDisconnect: () => ipcRenderer.invoke('discord-disconnect'),
 
   // Agent team. State only — no keys, no App IDs.

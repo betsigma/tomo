@@ -83,4 +83,68 @@ function weeklyDue(lastPostedAt, now, enabled) {
   return new Date(lastPostedAt) < slot;
 }
 
-module.exports = { normalizeDiscordMessage, digestMessage, weeklyDue, weekStart };
+// ----- Everything Tomo posts is built here, so the content rules live in one place -----
+const NUMBERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+
+// Strip [course codes], links and extra spaces. Posts carry titles and times only.
+function cleanPostText(text) {
+  return String(text || '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .split('\n').map((l) => l.trim()).filter(Boolean).join('\n')
+    .trim();
+}
+
+// One post from a request: {type:'text', text} or {type:'poll', question, options[]}.
+// Returns {content} or {question, options}; poll limits are Discord's (300 / 55 chars).
+function buildPost(req) {
+  if (req && req.type === 'poll') {
+    const options = (req.options || []).map((o) => cleanPostText(o).slice(0, 55)).filter(Boolean).slice(0, 5);
+    return { question: cleanPostText(req.question).slice(0, 300), options };
+  }
+  return { content: cleanPostText(req && req.text).slice(0, 1900) };
+}
+
+// The same poll as plain text, for the reaction fallback.
+function pollAsText(post) {
+  return [post.question, ...post.options.map((o, i) => `${NUMBERS[i]} ${o}`)].join('\n');
+}
+
+// Votes from a fetched message: a native poll's answer counts, or the number
+// reactions minus the bot's own (it adds one of each so people can tap them).
+function countVotes(message, labels) {
+  const m = message || {};
+  let counts;
+  if (m.poll) {
+    const answers = m.poll.answers || [];
+    const results = (m.poll.results && m.poll.results.answer_counts) || [];
+    counts = answers.map((a, i) => {
+      const hit = results.find((r) => r.id === a.answer_id);
+      return { label: (a.poll_media && a.poll_media.text) || labels[i] || '', count: hit ? hit.count : 0 };
+    });
+  } else {
+    counts = (labels || []).map((label, i) => {
+      const r = (m.reactions || []).find((x) => x.emoji && x.emoji.name === NUMBERS[i]);
+      return { label, count: r ? Math.max(0, r.count - (r.me ? 1 : 0)) : 0 };
+    });
+  }
+  const top = Math.max(0, ...counts.map((c) => c.count));
+  const leaders = counts.filter((c) => c.count === top && top > 0);
+  return { counts, winner: leaders.length === 1 ? leaders[0].label : null, tie: leaders.length > 1 };
+}
+
+// 'live' only when posting is switched on and the app is not in mock mode.
+function postMode(posting, creaoMode) {
+  if (String(creaoMode || '').trim().toLowerCase() === 'mock') return 'mock';
+  return posting ? 'live' : 'off';
+}
+
+// Fake votes for mock mode, so the demo works without Discord.
+function mockVotes(labels) {
+  const fake = [3, 1, 0, 0, 0];
+  return { counts: labels.map((label, i) => ({ label, count: fake[i] || 0 })), winner: labels[0] || null, tie: false, mock: true };
+}
+
+module.exports = { normalizeDiscordMessage, digestMessage, weeklyDue, weekStart,
+  cleanPostText, buildPost, pollAsText, countVotes, mockVotes, postMode, NUMBERS };

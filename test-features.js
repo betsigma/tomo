@@ -1296,6 +1296,47 @@ check('a digest returned as one bulleted string is split into bullets', () => {
   assert.strictEqual(creao.normalizeDigest(arr), arr, 'an array is left alone');
 });
 
+console.log('\n18c. One door for Discord posts');
+
+check('posts drop course codes and links, and polls fit Discord limits', () => {
+  const D = require('./discord.js');
+  assert.strictEqual(D.cleanPostText('Midterm [F26 CIS D022A 06Z] review https://canvas.example/x'), 'Midterm review');
+  const p = D.buildPost({ type: 'poll', question: 'Women in STEM [F26 X] · Thu 5pm', options: ["I'm in", 'Maybe', "Can't make it", 'a'.repeat(80)] });
+  assert.strictEqual(p.question, 'Women in STEM · Thu 5pm');
+  assert.strictEqual(p.options.length, 4);
+  assert.strictEqual(p.options[3].length, 55);
+  assert.deepStrictEqual(D.buildPost({ type: 'text', text: 'Betsy finished: Lab 5 [F26 PHYS]' }), { content: 'Betsy finished: Lab 5' });
+});
+
+check('nothing is live unless posting is on and the app is not in mock mode', () => {
+  const D = require('./discord.js');
+  assert.strictEqual(D.postMode(false, 'live'), 'off');
+  assert.strictEqual(D.postMode(true, 'mock'), 'mock');
+  assert.strictEqual(D.postMode(true, ''), 'live');
+});
+
+check('vote counting reads native polls and ignores the bot\'s own reaction', () => {
+  const D = require('./discord.js');
+  const labels = ["I'm in", 'Maybe', "Can't make it"];
+  const poll = { poll: { answers: labels.map((t, i) => ({ answer_id: i + 1, poll_media: { text: t } })),
+    results: { answer_counts: [{ id: 1, count: 4 }, { id: 3, count: 1 }] } } };
+  assert.deepStrictEqual(D.countVotes(poll, labels).counts.map((c) => c.count), [4, 0, 1]);
+  assert.strictEqual(D.countVotes(poll, labels).winner, "I'm in");
+  const reactions = { reactions: [
+    { emoji: { name: '1️⃣' }, count: 1, me: true },
+    { emoji: { name: '2️⃣' }, count: 3, me: true },
+    { emoji: { name: '3️⃣' }, count: 2, me: false }
+  ] };
+  assert.deepStrictEqual(D.countVotes(reactions, labels).counts.map((c) => c.count), [0, 2, 2]);
+  assert.strictEqual(D.countVotes(reactions, labels).tie, true);
+});
+
+check('the calendar an agent sees has times only', () => {
+  const T = require('./teamInputs.js');
+  const out = T.busyTimes([{ start: '2026-10-26T09:00', end: '2026-10-26T10:15', title: 'PHYS 4A lecture' }]);
+  assert.deepStrictEqual(out, [{ start: '2026-10-26T09:00', end: '2026-10-26T10:15' }]);
+});
+
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 

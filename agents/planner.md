@@ -18,7 +18,7 @@ One text input named **`payload`**, containing this JSON object as a string:
       "confidence": "high", "source": "canvas" }
   ],
   "calendar": [
-    { "start": "2026-10-24T09:00", "end": "2026-10-24T10:15", "title": "PHYS 4A lecture" }
+    { "start": "2026-10-24T09:00", "end": "2026-10-24T10:15" }
   ],
   "free_windows": [
     { "start": "2026-10-24T13:00", "end": "2026-10-24T18:00" }
