@@ -22,5 +22,5 @@ Before you start: `npm start`, Team tab open. If Discord or CREAO credits fail, 
 
 ## 1:35 – 2:00 Shared task and digest
 1. Tick a task marked **shared**: preview "Betsy finished: …" → Send.
-2. **Team → Post digest**: the Digest Writer's bullets, again behind a preview.
+2. **Team → Post digest**: only approved events and shared work ("Club meeting · Thu …", "Group slides: not done"), again behind a preview. The Digest Writer's brief stays in the app.
 3. Close: remove an agent's key and Run team → that part of the app goes empty (see README, "What happens without the agents").

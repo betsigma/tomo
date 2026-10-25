@@ -164,15 +164,37 @@
     if (!Number.isFinite(h)) return '';
     return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
   }
-  // "I'm in / Maybe / Can't make it" poll titled with name, day, time and place.
-  // Course codes are stripped; nothing else about the event is shared.
-  function rsvpRequest(ev) {
+  // "Club meeting · Thu, Oct 29 5pm-6pm · S34": name, day, time and place only.
+  function eventLine(ev) {
     const [y, mo, d] = String(ev.start || '').split('-').map(Number);
     const day = y ? new Date(y, mo - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
     const time = ev.time ? clock(ev.time) + (ev.endTime && ev.endTime !== ev.time ? '-' + clock(ev.endTime) : '') : '';
-    const parts = [shortTitle(ev.title).replace(/\[[^\]]*\]/g, '').trim(), [day, time].filter(Boolean).join(' '), ev.location || '']
-      .filter(Boolean);
-    return { type: 'poll', question: 'Who\'s in? ' + parts.join(' · '), options: ['I\'m in', 'Maybe', 'Can\'t make it'] };
+    return [shortTitle(ev.title).replace(/\[[^\]]*\]/g, '').trim(), [day, time].filter(Boolean).join(' '), ev.location || '']
+      .filter(Boolean).join(' · ');
+  }
+
+  // "I'm in / Maybe / Can't make it" poll titled with the event line.
+  function rsvpRequest(ev) {
+    return { type: 'poll', question: 'Who\'s in? ' + eventLine(ev), options: ['I\'m in', 'Maybe', 'Can\'t make it'] };
+  }
+
+  // The weekly Discord digest: ONLY approved events in the next 7 days and shared
+  // tasks (title, done or not). No personal tasks, due dates, summaries or study
+  // blocks. Empty text means there is nothing to share.
+  function shareDigest(store, today) {
+    const [y, mo, d] = String(today).split('-').map(Number);
+    const end = new Date(y, mo - 1, d + 7);
+    const until = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    const events = ((store && store.events) || [])
+      .filter((e) => isEventItem(e) && e.status === 'active' && e.start >= today && e.start < until)
+      .sort((a, b) => `${a.start}T${a.time || ''}`.localeCompare(`${b.start}T${b.time || ''}`))
+      .map((e) => '• ' + eventLine(e));
+    const shared = ((store && store.todos) || []).filter((t) => t && t.shared)
+      .map((t) => `• ${shortTitle(t.title).replace(/\[[^\]]*\]/g, '').trim()}: ${t.done ? 'done' : 'not done'}`);
+    if (!events.length && !shared.length) return '';
+    return ['📌 This week',
+      ...(events.length ? ['Events:', ...events] : []),
+      ...(shared.length ? ['Shared work:', ...shared] : [])].join('\n');
   }
 
   // "<name> finished: <title>" for a shared task, or null: not shared, or already
@@ -496,7 +518,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, eventSource, rsvpRequest, donePost, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, eventSource, rsvpRequest, donePost, shareDigest, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

@@ -54,16 +54,6 @@ function normalizeDiscordMessage(m, channelName) {
   };
 }
 
-// The team digest as one Discord message: a heading plus bullet lines.
-// Discord rejects messages over 2,000 characters, so keep a margin.
-function digestMessage(teamDigest) {
-  const bullets = (Array.isArray(teamDigest) ? teamDigest : [])
-    .map((s) => String(s || '').trim())
-    .filter(Boolean)
-    .map((s) => '• ' + s);
-  return ('📌 Team digest\n' + bullets.join('\n')).slice(0, 1900);
-}
-
 // This week's Monday at 09:00 local time.
 function weekStart(now) {
   const d = new Date(now);
@@ -146,5 +136,5 @@ function mockVotes(labels) {
   return { counts: labels.map((label, i) => ({ label, count: fake[i] || 0 })), winner: labels[0] || null, tie: false, mock: true };
 }
 
-module.exports = { normalizeDiscordMessage, digestMessage, weeklyDue, weekStart,
+module.exports = { normalizeDiscordMessage, weeklyDue, weekStart,
   cleanPostText, buildPost, pollAsText, countVotes, mockVotes, postMode, NUMBERS };

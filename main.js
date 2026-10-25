@@ -20,7 +20,8 @@ const { google } = require('googleapis');
 const { normalizeCalendar, fetchText } = require('./canvas');
 const { fetchPreview, isTrusted, extractBodyText } = require('./gmail');
 const { isJunkTitle } = require('./titles');
-const { normalizeDiscordMessage, digestMessage, weeklyDue, buildPost, pollAsText, countVotes, mockVotes, NUMBERS, postMode: discordPostMode } = require('./discord');
+const { normalizeDiscordMessage, weeklyDue, buildPost, pollAsText, countVotes, mockVotes, NUMBERS, postMode: discordPostMode } = require('./discord');
+const Inbox = require('./inbox.js');
 const llm = require('./llm');
 const { RelevanceModel } = require('./ml');
 const { createClient, geminiAllowed } = require('./creaoClient');
@@ -709,27 +710,25 @@ async function postTarget() {
   }
   return { token, channelId, label: channelId ? '#' + (channelNames[channelId] || channelId) : 'no channel set' };
 }
-// {type:'digest'} becomes the latest Digest Writer bullets; other requests pass through.
+// {type:'digest'} becomes the group digest: approved events and shared tasks only.
+// The Digest Writer's brief and bullets stay inside the app.
 function resolvePost(req) {
   if (!req || req.type !== 'digest') return req;
-  let outputs = {};
-  try { outputs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'agent-team.json'), 'utf8')).outputs || {}; }
-  catch { /* no team run yet */ }
-  const digest = (outputs.DIGEST && outputs.DIGEST.team_digest) || [];
-  return digest.length ? { type: 'text', text: digestMessage(digest), digest: true } : null;
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { type: 'text', text: Inbox.shareDigest(loadStore(), today), digest: true };
 }
 
 ipcMain.handle('discord-post-preview', async (_e, req) => {
   const r = resolvePost(req);
-  if (!r) return { ok: false, error: 'Run the team first; no digest yet.' };
   const target = await postTarget();
   return { ok: true, mode: postMode(), channel: target.label, post: buildPost(r) };
 });
 
 ipcMain.handle('discord-post-send', async (_e, req) => {
   const r = resolvePost(req);
-  if (!r) return { ok: false, error: 'Run the team first; no digest yet.' };
   const post = buildPost(r);
+  if (!post.options && !post.content) return { ok: false, error: 'Nothing to share this week' };
   const mode = postMode();
   if (mode !== 'live') return { ok: true, mock: true, mode, messageId: 'mock-' + Date.now(), method: post.options ? 'poll' : 'text' };
   const { token, channelId, label } = await postTarget();

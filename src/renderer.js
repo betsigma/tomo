@@ -1646,10 +1646,12 @@ async function confirmPost(req) {
       : `Posting is off: preview only (target ${pre.channel}). Turn it on in Settings.`);
   el('post-target').classList.toggle('is-mock', !live);
   const p = pre.post;
+  const empty = !p.options && !p.content;
   setHTML('post-preview', p.options
     ? `<strong>${esc(p.question)}</strong><ol>${p.options.map((o) => `<li>${esc(o)}</li>`).join('')}</ol>`
-    : `<p>${esc(p.content)}</p>`);
+    : `<p>${esc(empty ? 'Nothing to share this week' : p.content)}</p>`);
   el('post-send').textContent = live ? 'Send' : 'Show as sent (mock)';
+  toggleHidden('post-send', empty);   // nothing to share: nothing to send
   showPopup(el('post-modal'));
   const go = await new Promise((resolve) => { postResolve = resolve; });
   if (!go) return null;

@@ -1378,15 +1378,37 @@ check('only shared tasks post, with a clean title, and never twice', () => {
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 
-check('the digest is a short bulleted message', () => {
-  const msg = Discord.digestMessage(['Lab is due Friday.', 'Essay draft tonight.', 'Ask for help early.']);
-  assert.ok(msg.includes('Lab is due Friday.'));
-  assert.ok(msg.split('\n').length === 4, 'heading plus three bullets');
+check('the group digest lists only approved events and shared tasks', () => {
+  const store = {
+    events: [
+      { status: 'active', dedupeKey: 'agent:discord:2026-10-29:club-meeting', title: 'Club meeting', start: '2026-10-29', time: '17:00', endTime: '18:00', location: 'S34' },
+      { status: 'active', dedupeKey: 'agent:block:t1:2026-10-27T09:00', title: 'Study: Paper 2', taskTitle: 'Paper 2', start: '2026-10-27', time: '09:00', endTime: '09:50' },
+      { status: 'active', dedupeKey: 'canvas:event-assignment-1637592', title: 'Paper 2 [F26 ENGL C1000]', start: '2026-10-27' },
+      { status: 'dismissed', dedupeKey: 'agent:mail:2026-10-28:mixer', title: 'Rejected mixer', start: '2026-10-28' },
+      { status: 'active', dedupeKey: 'agent:mail:2026-11-20:far', title: 'Far-off gala', start: '2026-11-20' }
+    ],
+    todos: [
+      { title: 'Group slides [F26 BUS]', due: '2026-10-30', shared: true, done: false, summary: 'Make 10 slides' },
+      { title: 'Lab 5 report', due: '2026-10-30', shared: true, done: true },
+      { title: 'Paper 2 (DUE by TUESDAY)', due: '2026-10-27', shared: false, done: false, summary: 'MLA essay with quotes' }
+    ]
+  };
+  const msg = Inbox.shareDigest(store, '2026-10-25');
+  assert.strictEqual(msg, [
+    '📌 This week',
+    'Events:',
+    '• Club meeting · Thu, Oct 29 5pm-6pm · S34',
+    'Shared work:',
+    '• Group slides: not done',
+    '• Lab 5 report: done'
+  ].join('\n'));
+  assert.ok(!/Paper 2|Study|MLA|Make 10|\[|due|Rejected|gala/i.test(msg), 'no personal tasks, study blocks, summaries, due dates or codes');
 });
 
-check('the digest stays under the Discord message limit', () => {
-  const msg = Discord.digestMessage(['x'.repeat(3000)]);
-  assert.ok(msg.length <= 1900);
+check('the group digest is empty when there is nothing to share', () => {
+  const store = { events: [], todos: [{ title: 'Paper 2', due: '2026-10-27', shared: false }] };
+  assert.strictEqual(Inbox.shareDigest(store, '2026-10-25'), '');
+  assert.deepStrictEqual(Discord.buildPost({ type: 'text', text: '' }), { content: '' });
 });
 
 check('a weekly digest is due on Monday after 9 AM, once', () => {
