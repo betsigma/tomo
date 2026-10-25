@@ -576,7 +576,9 @@
             <h4 class="panel-label">Notes</h4>
             <p id="evm-notes" class="panel-text"></p>
           </div>
-          <!-- Only for events the agents found (club meetings, socials), never deadlines -->
+          <!-- Mark an agent item (or your own) as a fun event; never shown for Canvas or study blocks -->
+          <label id="evm-fun-wrap" class="field-inline hidden"><span><input id="evm-fun" type="checkbox" /> &#10024; It's an event (lets you ask the group)</span></label>
+          <!-- Only for events (club meetings, socials), never deadlines -->
           <div id="evm-rsvp" class="rsvp-row hidden">
             <span class="fun-badge">&#10024; event</span>
             <button id="evm-rsvp-ask" class="btn small primary">Ask the group</button>

@@ -1777,7 +1777,12 @@ function openEventPanel(id) {
 
   toggleHidden('evm-shared-wrap', true);   // sharing is for tasks
 
-  // RSVP poll: only on events the agents found, never on deadlines.
+  // RSVP poll: only on events, never on deadlines. Agent-found events always are;
+  // other items (not Canvas, not study blocks) can be marked by you.
+  const agentEvent = typeof Inbox !== 'undefined' && /^agent:(mail|discord):/.test(base.dedupeKey || '');
+  const markable = typeof Inbox !== 'undefined' && !agentEvent && Inbox.canMarkEvent(base);
+  toggleHidden('evm-fun-wrap', !markable);
+  el('evm-fun').checked = !!base.funEvent;
   const fun = typeof Inbox !== 'undefined' && Inbox.isEventItem(base);
   toggleHidden('evm-rsvp', !fun);
   toggleHidden('evm-rsvp-check', !(fun && base.rsvp));
@@ -1828,6 +1833,7 @@ function openTodoPanel(id) {
   setText('evm-done', t.done ? 'Mark not done' : 'Mark done');
   toggleHidden('evm-block', true);
   toggleHidden('evm-rsvp', true);
+  toggleHidden('evm-fun-wrap', true);
   toggleHidden('evm-shared-wrap', false);
   el('evm-shared').checked = !!t.shared;
 
@@ -3213,6 +3219,14 @@ function wirePanels() {
   on('ee-cancel', 'click', showDetailsMode);
   on('ee-save', 'click', saveEditForm);
   on('evm-rsvp-ask', 'click', askGroup);
+  on('evm-fun', 'change', (e) => {
+    const id = currentPanelId;
+    const base = panelKind === 'event' && store.events.find((x) => x.id === parseEventId(id).baseId);
+    if (!base) return;
+    base.funEvent = e.target.checked;
+    save();
+    openEventPanel(id);   // shows or hides Ask the group
+  });
   on('evm-shared', 'change', (e) => {
     const t = panelKind === 'todo' && store.todos.find((x) => x.id === currentPanelId);
     if (!t) return;

@@ -1388,6 +1388,16 @@ check('only events the agents found get Ask the group, never deadlines or study 
   assert.strictEqual(Inbox.eventSource('agent:discord:x'), 'from Discord');
 });
 
+check('you can mark an item as an event, but never Canvas coursework or study blocks', () => {
+  const emailTask = { source: 'agent', dedupeKey: 'agent:email:email-hangout-event', title: 'Hangout event', start: '2026-10-30' };
+  assert.strictEqual(Inbox.isEventItem(emailTask), false, 'an email task is a deadline until you say otherwise');
+  assert.strictEqual(Inbox.isEventItem({ ...emailTask, funEvent: true }), true);
+  assert.strictEqual(Inbox.isEventItem({ source: 'manual', dedupeKey: null, title: 'Picnic', funEvent: true }), true);
+  assert.strictEqual(Inbox.isEventItem({ source: 'canvas', dedupeKey: 'canvas:event-assignment-1', title: 'Quiz', funEvent: true }), false);
+  assert.strictEqual(Inbox.isEventItem({ source: 'agent', dedupeKey: 'agent:block:t1:2026-10-30T09:30', funEvent: true }), false);
+  assert.strictEqual(Inbox.canMarkEvent({ source: 'canvas', dedupeKey: 'canvas:x' }), false);
+});
+
 check('the RSVP poll title has name, day, time and place, without course codes', () => {
   const req = Inbox.rsvpRequest({ title: 'Study night [F26 MATH D001B 49]', start: '2026-10-29', time: '17:00', endTime: '18:30', location: 'S34' });
   assert.strictEqual(req.type, 'poll');

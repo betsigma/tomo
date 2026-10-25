@@ -156,7 +156,14 @@
     return EVENT_KINDS[kind] || null;
   }
   function isEventItem(ev) {
-    return !!(ev && String(ev.dedupeKey || '').indexOf('agent:') === 0 && eventSource(ev.dedupeKey));
+    if (!ev) return false;
+    if (String(ev.dedupeKey || '').indexOf('agent:') === 0 && eventSource(ev.dedupeKey)) return true;
+    return !!ev.funEvent && canMarkEvent(ev);   // you marked it "It's an event"
+  }
+  // You may mark an item as an event, except Canvas coursework and study blocks.
+  function canMarkEvent(ev) {
+    const key = String((ev && ev.dedupeKey) || '');
+    return !!ev && ev.source !== 'canvas' && key.indexOf('canvas:') !== 0 && key.indexOf('agent:block:') !== 0;
   }
 
   function clock(t) {
@@ -518,7 +525,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, eventSource, rsvpRequest, donePost, shareDigest, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, canMarkEvent, eventSource, rsvpRequest, donePost, shareDigest, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });
