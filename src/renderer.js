@@ -1311,7 +1311,8 @@ function initCalendar() {
       const dateStr = arg.date.toISOString().slice(0, 10);
       console.log('[ui] more-link', dateStr);
       openDayList(dateStr);
-      return false;
+      // FullCalendar opens its own popover on a falsy return; a non-string truthy value does nothing.
+      return true;
     },
     // Clicking a day number or the empty part of a cell -> day list panel.
     dateClick: (arg) => openDayList(arg.dateStr.slice(0, 10))
