@@ -20,7 +20,7 @@ const { google } = require('googleapis');
 const { normalizeCalendar, fetchText } = require('./canvas');
 const { fetchPreview, isTrusted, extractBodyText } = require('./gmail');
 const { isJunkTitle } = require('./titles');
-const { normalizeDiscordMessage } = require('./discord');
+const { normalizeDiscordMessage, digestMessage, weeklyDue } = require('./discord');
 const llm = require('./llm');
 const { RelevanceModel } = require('./ml');
 const { createClient, geminiAllowed } = require('./creaoClient');
@@ -51,7 +51,7 @@ const DEFAULT_STORE = {
   overrides: {},
   llmCache: {},
   settings: {
-    theme: 'auto',
+    theme: 'light',
     refreshMinutes: 15,
     alwaysOnTop: true,
     viewMode: 'compact',
@@ -421,6 +421,10 @@ ipcMain.handle('gmail-disconnect', () => {
 // `llm` = { enabled, model, cache } from the renderer. The API key is read here
 // from encrypted secrets and never returned to the page.
 ipcMain.handle('gmail-fetch', async (_e, filters = {}, cache = null, llmReq = null, mlReq = null) => {
+  // Live mode: the Mail Scanner is the only email source. Do not read Gmail here.
+  if (creao.status().globalMode === 'live') {
+    return { ok: false, error: 'Local Gmail is off while the Mail Scanner is live' };
+  }
   const oauth2 = buildGmailClient();
   if (!oauth2) return { ok: false, error: 'Gmail is not connected' };
   try {
@@ -529,6 +533,9 @@ ipcMain.handle('llm-set-key', (_e, apiKey) => {
 // Test the AI on ONE saved sample email. `messageId` is optional; if given we
 // re-fetch that message's body, otherwise we fall back to a cached sample text.
 ipcMain.handle('llm-test', async (_e, messageId, model) => {
+  if (creao.status().globalMode === 'live') {
+    return { ok: false, error: 'Gemini is off while CREAO_MODE=live' };
+  }
   const apiKey = decryptSecret(loadSecrets().geminiApiKey);
   if (!apiKey) return { ok: false, error: 'Add your Gemini API key first.' };
   const useModel = model || llm.DEFAULT_MODEL;
@@ -654,6 +661,60 @@ async function discordGet(apiPath, token) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
+
+async function discordPost(apiPath, token, body) {
+  const res = await fetch('https://discord.com/api/v10' + apiPath, {
+    method: 'POST',
+    headers: { Authorization: 'Bot ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (res.status === 401) throw new Error('Invalid bot token (401).');
+  if (res.status === 403) throw new Error('Bot lacks access (403). Allow "Send Messages" in that channel.');
+  if (res.status === 404) throw new Error('Channel not found (404).');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+const DIGEST_LOG = path.join(DATA_DIR, 'discord-digest.json');
+function loadDigestLog() {
+  try { return JSON.parse(fs.readFileSync(DIGEST_LOG, 'utf8')); } catch { return {}; }
+}
+
+// Post the latest Digest Writer output to the connected Discord channel.
+async function postDigest({ force = false } = {}) {
+  const s = loadSecrets();
+  const token = decryptSecret(s.discordToken);
+  const channelId = decryptSecret(s.discordChannelId);
+  if (!token || !channelId) return { ok: false, error: 'Discord is not connected' };
+
+  let outputs = {};
+  try { outputs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'agent-team.json'), 'utf8')).outputs || {}; }
+  catch { /* no team run yet */ }
+  const digest = (outputs.DIGEST && outputs.DIGEST.team_digest) || [];
+  if (!digest.length) return { ok: false, error: 'Run the team first; no digest yet.' };
+
+  const text = digestMessage(digest);
+  try {
+    await discordPost(`/channels/${channelId}/messages`, token, { content: text });
+    ensureDataDir();
+    writeJsonAtomic(DIGEST_LOG, { lastPostedAt: new Date().toISOString() });
+    console.log(`[discord] digest posted (${digest.length} bullets)`);
+    return { ok: true, count: digest.length, force };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+}
+
+ipcMain.handle('discord-post-digest', () => postDigest({ force: true }));
+
+async function maybeWeeklyDigest() {
+  const store = loadStore();
+  const enabled = !!(store.settings && store.settings.discord && store.settings.discord.digestWeekly);
+  if (!weeklyDue(loadDigestLog().lastPostedAt, new Date(), enabled)) return;
+  const r = await postDigest();
+  if (!r.ok) console.log('[discord] weekly digest skipped: ' + r.error);
+}
+setInterval(maybeWeeklyDigest, 30 * 60 * 1000);
 
 ipcMain.handle('discord-status', () => {
   const s = loadSecrets();

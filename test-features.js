@@ -1006,6 +1006,125 @@ check('the task inbox shows only unapproved Analyst tasks', () => {
   assert.deepStrictEqual(pending.map((p) => p.id), ['c2']);
 });
 
+check('Analyst tasks join the list automatically, and reject removes one', () => {
+  const store = { events: [], todos: [], agentRejects: [] };
+  const outputs = { ANALYST: { tasks: [
+    { id: 'c1', title: 'Lab 5', due_date: '2026-10-26', priority_rank: 1 },
+    { id: 'c2', title: 'Essay', due_date: '2026-10-27', priority_rank: 2 }
+  ] } };
+  assert.strictEqual(Inbox.autoAddTasks(store, outputs), 2);
+  assert.deepStrictEqual(store.todos.map((t) => t.id), ['c1', 'c2']);
+  assert.strictEqual(Inbox.autoAddTasks(store, outputs), 0);
+  Inbox.rejectTask(store, { id: 'c1' });
+  assert.deepStrictEqual(store.todos.map((t) => t.id), ['c2']);
+  assert.strictEqual(Inbox.autoAddTasks(store, outputs), 0);
+});
+
+console.log('\n18. Spam, hidden mail, and the deadline scope');
+check('hidden mail and spam senders stay out of the list', () => {
+  const view = Feed.emailList({
+    globalMode: 'live',
+    mail: { status: 'done', mode: 'live' },
+    mailOutput: { important_emails: [
+      { subject: 'Aid', sender: 'finaid@deanza.edu', category: 'important' },
+      { subject: 'Deal', sender: 'shop@example.com', category: 'advertisement' },
+      { subject: 'Junk', sender: 'spam@example.com' },
+      { subject: 'Hidden one', sender: 'news@example.com' }
+    ], events: [] },
+    hiddenKeys: ['news@example.com::Hidden one'],
+    spamSenders: ['spam@example.com']
+  });
+  assert.deepStrictEqual(view.emails.map((e) => e.subject), ['Aid']);
+  assert.deepStrictEqual(view.spam.map((e) => e.subject), ['Deal']);
+  assert.deepStrictEqual(view.hidden.map((e) => e.subject), ['Junk', 'Hidden one']);
+});
+
+check('mail without a category counts as important', () => {
+  const view = Feed.emailList({
+    globalMode: 'live', mail: { status: 'done', mode: 'live' },
+    mailOutput: { important_emails: [{ subject: 'No category', sender: 'a@b.edu' }], events: [] }
+  });
+  assert.deepStrictEqual(view.emails.map((e) => e.subject), ['No category']);
+});
+
+check('the planning horizon comes from settings', () => {
+  const now = new Date(2026, 9, 24, 12);
+  const store = { events: [], todos: [], archived: { legacy_canvas: [
+    { id: 'soon', title: 'Soon', due: '2026-10-26', course: 'PHYS 4A', dedupeKey: 'canvas:soon' },
+    { id: 'late', title: 'Late', due: '2026-11-10', course: 'PHYS 4A', dedupeKey: 'canvas:late' }
+  ] } };
+  const short = teamInputs.buildAnalystInput(store, {}, [], now, { horizonDays: 7 });
+  const wide = teamInputs.buildAnalystInput(store, {}, [], now, { horizonDays: 21 });
+  assert.deepStrictEqual(short.input.tasks.map((t) => t.id), ['soon']);
+  assert.deepStrictEqual(wide.input.tasks.map((t) => t.id), ['soon', 'late']);
+});
+
+checkAsync('the orchestrator uses the saved planning horizon', async () => {
+  const dir = tmpData();
+  const seen = [];
+  const client = fakeTeamClient({
+    MAIL: { ok: true, source: 'live', output: { important_emails: [], events: [] } },
+    ANALYST: { ok: true, source: 'live', output: { tasks: [], crunch_weeks: [] } },
+    PLANNER: { ok: true, source: 'mock', output: { proposals: [], adjustment_note: '' } },
+    DIGEST: { ok: true, source: 'mock', output: { morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] } }
+  });
+  const orig = client.run;
+  client.run = async (role, input, opts) => { seen.push({ role, input }); return orig(role, input, opts); };
+  const orch = createOrchestrator({
+    client, dataDir: dir,
+    loadStore: () => ({
+      events: [], todos: [], settings: { team: { horizonDays: 21 } },
+      archived: { legacy_canvas: [{ id: 'late', title: 'Late', due: '2026-11-10', course: 'PHYS 4A', dedupeKey: 'canvas:late' }] }
+    }),
+    emit: () => {}, log: () => {}, now: () => new Date(2026, 9, 24, 12, 0, 0)
+  });
+  try { await orch.runTeam('schedule'); }
+  finally { orch.stop(); }
+  const analyst = seen.find((c) => c.role === 'ANALYST');
+  assert.deepStrictEqual(analyst.input.tasks.map((t) => t.id), ['late']);
+});
+
+check('study blocks are added to the calendar automatically, and edit keeps the key', () => {
+  const store = { events: [], todos: [] };
+  const outputs = { PLANNER: { proposals: [
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T09:00', end: '2026-10-24T09:45', reason: 'free' }
+  ] } };
+  assert.strictEqual(Inbox.autoAddProposals(store, outputs), 1);
+  assert.strictEqual(Inbox.autoAddProposals(store, outputs), 0);
+  const key = store.events[0].dedupeKey;
+  Inbox.editProposal(store, Inbox.listProposals(outputs)[0], { title: 'Lab 5 v2', time: '10:00' });
+  assert.strictEqual(store.events.length, 1);
+  assert.strictEqual(store.events[0].title, 'Lab 5 v2');
+  assert.strictEqual(store.events[0].time, '10:00');
+  assert.strictEqual(store.events[0].dedupeKey, key);
+});
+
+console.log('\n19. Weekly Discord digest');
+const Discord = require('./discord.js');
+
+check('the digest is a short bulleted message', () => {
+  const msg = Discord.digestMessage(['Lab is due Friday.', 'Essay draft tonight.', 'Ask for help early.']);
+  assert.ok(msg.includes('Lab is due Friday.'));
+  assert.ok(msg.split('\n').length === 4, 'heading plus three bullets');
+});
+
+check('the digest stays under the Discord message limit', () => {
+  const msg = Discord.digestMessage(['x'.repeat(3000)]);
+  assert.ok(msg.length <= 1900);
+});
+
+check('a weekly digest is due on Monday after 9 AM, once', () => {
+  const monday10 = new Date(2026, 9, 26, 10, 0, 0);
+  const monday8 = new Date(2026, 9, 26, 8, 0, 0);
+  const lastWeek = new Date(2026, 9, 19, 10, 0, 0).toISOString();
+  const thisWeek = new Date(2026, 9, 26, 10, 30, 0).toISOString();
+  assert.strictEqual(Discord.weeklyDue(null, monday10, true), true);
+  assert.strictEqual(Discord.weeklyDue(null, monday8, true), false);
+  assert.strictEqual(Discord.weeklyDue(lastWeek, monday10, true), true);
+  assert.strictEqual(Discord.weeklyDue(thisWeek, monday10, true), false);
+  assert.strictEqual(Discord.weeklyDue(lastWeek, monday10, false), false);
+});
+
 // Run the async checks, then print the summary.
 (async () => {
   for (const { name, fn } of asyncChecks) {

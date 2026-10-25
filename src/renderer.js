@@ -25,7 +25,7 @@ let store = {
   emails: [],
   discord: [],
   settings: {
-    theme: 'auto', refreshMinutes: 15, alwaysOnTop: true, viewMode: 'compact',
+    theme: 'light', refreshMinutes: 15, alwaysOnTop: true, viewMode: 'compact',
     deadlineWindowDays: 2,
     canvas: {},
     gmail: {
@@ -50,8 +50,11 @@ let store = {
     ml: { enabled: false, seeded: false },
     timer: { work: 25, break: 5, notify: true, sound: true },
     music: { track: 0, shuffle: false, loop: false },
-    discord: { limit: 25 },
+    discord: { limit: 25, digestWeekly: false },
     discordMeta: {},
+    team: { horizonDays: 14 },
+    mailHidden: [],
+    mailSpamSenders: [],
     // Migration + hidden restore switch. Default off: Canvas stays agent input.
     migration: {},
     dev: { restoreCanvasTodos: false }
@@ -343,9 +346,11 @@ function dueByTask() {
 
 function pendingMarkup(state) {
   if (typeof Inbox === 'undefined') return '<li class="empty-note">Nothing waiting yet.</li>';
-  const decided = new Set((store.events || []).filter((e) => e && e.dedupeKey).map((e) => e.dedupeKey));
+  const rejected = new Set((store.events || [])
+    .filter((e) => e && e.status === 'dismissed' && e.dedupeKey)
+    .map((e) => e.dedupeKey));
   const raw = ((state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [])
-    .filter((p) => !decided.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
+    .filter((p) => !rejected.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
   const cards = Inbox.groupProposals(raw, dueByTask());
   const singles = Inbox.pendingProposals(state.outputs, store).filter((p) => p.kind !== 'block');
   const html = cards.map(taskCard).concat(singles.map(pendingRow)).join('');
@@ -357,7 +362,6 @@ function taskCard(card) {
   const parts = card.blocks.map((b) => `<li class="pending-part${b.afterDeadline ? ' after-deadline' : ''}">
     <span>${esc(b.label)}${b.afterDeadline ? ' · after deadline' : ''}</span>
     <span class="pending-actions">
-      <button type="button" class="btn small primary" data-action="approve-proposal" data-key="${esc(b.key)}">Approve</button>
       <button type="button" class="btn small" data-action="edit-proposal" data-key="${esc(b.key)}">Edit</button>
       <button type="button" class="btn small" data-action="reject-proposal" data-key="${esc(b.key)}">Reject</button>
     </span>
@@ -365,6 +369,7 @@ function taskCard(card) {
       <input name="title" type="text" value="${esc(card.title)}" />
       <input name="start" type="date" value="${esc(b.start || '')}" />
       <input name="time" type="time" value="${esc(b.time || '')}" />
+      <button type="button" class="btn small primary" data-action="save-proposal" data-key="${esc(b.key)}">Save</button>
     </form>
   </li>`).join('');
   return `<li class="pending-card">
@@ -375,7 +380,6 @@ function taskCard(card) {
       </summary>
       <ul class="pending-parts">${parts}</ul>
     </details>
-    <button type="button" class="btn small primary" data-action="approve-all" data-task="${esc(card.taskId || '')}">Approve all</button>
   </li>`;
 }
 
@@ -422,12 +426,27 @@ function decideProposal(key, action) {
   save();
   renderCalendar();
   renderTeam();
-  setStatus(action === 'reject' ? 'Proposal rejected' : 'Added to calendar');
+  setStatus(action === 'reject' ? 'Block removed' : 'Block saved');
+}
+
+function saveProposalEdit(key) {
+  const proposal = proposalByKey(key);
+  if (!proposal || typeof Inbox === 'undefined') return;
+  Inbox.editProposal(store, proposal, editsFromForm(key));
+  save();
+  renderCalendar();
+  renderTeam();
+  setStatus('Block updated');
 }
 
 function applyTeam(state) {
   teamState = state || null;
-  if (teamState && typeof Inbox !== 'undefined' && Inbox.applyTaskUpdates(store, teamState.outputs)) save();
+  if (teamState && typeof Inbox !== 'undefined') {
+    const added = Inbox.autoAddTasks(store, teamState.outputs);
+    const changed = Inbox.applyTaskUpdates(store, teamState.outputs);
+    const blocks = Inbox.autoAddProposals(store, teamState.outputs);
+    if (added || changed || blocks) save();
+  }
   renderMorningBrief();
   renderTeam();
   renderTaskInbox();
@@ -444,13 +463,8 @@ function renderTaskInbox() {
   const pending = (teamState && typeof Inbox !== 'undefined')
     ? Inbox.pendingTaskProposals(teamState.outputs, store)
     : [];
-  if (!pending.length) {
-    list.innerHTML = '<li class="empty-note">No new task proposals.</li>';
-    return;
-  }
-  const mock = teamState.globalMode === 'mock' ? '<li class="mock-note">mock</li>' : '';
-  list.innerHTML = mock + '<li class="pending-card task-all"><button type="button" class="btn small primary" data-action="approve-all-tasks">Approve all</button></li>' +
-    pending.map(taskProposalRow).join('');
+  const mock = teamState && teamState.globalMode === 'mock' ? '<li class="mock-note">mock</li>' : '';
+  list.innerHTML = mock + (pending.length ? pending.map(taskProposalRow).join('') : '<li class="empty-note">No new task proposals.</li>');
 }
 
 function taskProposalRow(p) {
@@ -464,7 +478,7 @@ function taskProposalRow(p) {
       <input name="due" type="date" value="${esc(p.due || '')}" />
     </form>
     <div class="pending-actions">
-      <button type="button" class="btn small primary" data-action="approve-task" data-task="${esc(p.id)}">Approve</button>
+      <span class="pending-added">Added to your tasks</span>
       <button type="button" class="btn small" data-action="edit-task" data-task="${esc(p.id)}">Edit</button>
       <button type="button" class="btn small" data-action="reject-task" data-task="${esc(p.id)}">Reject</button>
     </div>
@@ -536,7 +550,7 @@ function todoRow(t, dueIso) {
 }
 
 function renderTodos() {
-  const windowDays = Math.max(1, Math.min(14, Number(store.settings.deadlineWindowDays) || 2));
+  const windowDays = Math.max(1, Math.min(30, Number(store.settings.deadlineWindowDays) || 2));
   const today = todayStr();
   const windowEnd = toISODate(addDays(new Date(), windowDays));
 
@@ -597,8 +611,7 @@ function renderTodos() {
   setHTML('all-list',
     banner + (allSorted.length ? allSorted.map((t) => todoRow(t, localDateOf(t.due))).join('') : '<li class="empty-note">No tasks yet. Add one below.</li>'));
 
-  // Keep the Focus view's "Focus on" picker in step with the shared tasks.
-  if (typeof focusRefreshPicker === 'function') focusRefreshPicker();
+
 }
 
 // Mark a task done/undone. Canvas items exist as BOTH a to-do and a calendar
@@ -619,16 +632,22 @@ function setTaskDone(id, done) {
 // ---------------------------------------------------------------------------
 // 4b. Emails
 // ---------------------------------------------------------------------------
-function emailRow(e) {
+function emailRow(e, mode) {
   const events = e.events || (e.event ? [e.event] : []);
   const marker = events.length
     ? `<span class="email-event">&#128197; ${esc(formatDue(events[0].start))}${events.length > 1 ? ' +' + (events.length - 1) : ''}</span>`
     : '';
+  const action = mode === 'hidden'
+    ? `<button class="email-x" type="button" data-action="restore-email" data-key="${esc(e.key || '')}" data-sender="${esc(e.from || '')}" title="Restore this email">&#8617;</button>`
+    : `<button class="email-x" type="button" data-action="hide-email" data-key="${esc(e.key || '')}" title="Hide (you can restore it)">&times;</button>`;
   return `
     <li class="email" data-action="open-email" data-url="${esc(e.link || '')}" title="${esc(e.subject)}">
-      <span class="email-from">${esc(e.from)}</span>
-      <span class="email-subject">${esc(e.subject)}</span>
-      ${marker}
+      <span class="email-main">
+        <span class="email-from">${esc(e.from)}</span>
+        <span class="email-subject">${esc(e.subject)}</span>
+        ${marker}
+      </span>
+      ${action}
     </li>`;
 }
 
@@ -640,13 +659,16 @@ function emailView() {
     mail: mail || { status: 'idle', mode: 'live' },
     mailOutput: teamState && teamState.outputs && teamState.outputs.MAIL,
     localEmails: store.emails || [],
-    localSyncEnabled: !!(store.settings.gmail && store.settings.gmail.useLocalList)
+    localSyncEnabled: !!(store.settings.gmail && store.settings.gmail.useLocalList),
+    hiddenKeys: store.settings.mailHidden || [],
+    spamSenders: store.settings.mailSpamSenders || []
   });
 }
 
 function renderEmails() {
   const view = emailView();
   const list = view.emails || [];
+  const spam = view.spam || [];
   const banner = view.banner === 'Mail Scanner offline'
     ? '<li class="empty-note mail-offline">Mail Scanner offline</li>'
     : view.banner === 'mock'
@@ -655,14 +677,43 @@ function renderEmails() {
         ? `<li class="empty-note">${esc(view.banner)}</li>`
         : '';
   const compactHTML = banner + (list.length
-    ? list.slice(0, 3).map(emailRow).join('')
+    ? list.slice(0, 3).map((e) => emailRow(e)).join('')
     : (banner ? '' : '<li class="empty-note">No matching emails.</li>'));
+  const hidden = view.hidden || [];
+  const spamToggle = spam.length
+    ? `<li class="email-spam"><details><summary>Spam &amp; ads (${spam.length})</summary><ul class="email-list">${spam.map((e) => emailRow(e)).join('')}</ul></details></li>`
+    : '';
+  const hiddenToggle = hidden.length
+    ? `<li class="email-spam"><details><summary>Hidden (${hidden.length})</summary><ul class="email-list">${hidden.map((e) => emailRow(e, 'hidden')).join('')}</ul></details></li>`
+    : '';
   const fullHTML = banner + (list.length
-    ? list.map(emailRow).join('')
-    : (banner ? '' : '<li class="empty-note">No matching emails. Connect Gmail in Settings.</li>'));
+    ? list.map((e) => emailRow(e)).join('')
+    : (banner ? '' : '<li class="empty-note">No matching emails.</li>')) + spamToggle + hiddenToggle;
 
   setHTML('email-list-compact', compactHTML);
   setHTML('email-list', fullHTML);
+}
+
+function hideEmail(key) {
+  if (!key) return;
+  const hidden = store.settings.mailHidden || (store.settings.mailHidden = []);
+  if (hidden.includes(key)) return;
+  hidden.push(key);
+  save();
+  renderEmails();
+  showToast('Email hidden · restore it under "Hidden"', () => {
+    store.settings.mailHidden = hidden.filter((k) => k !== key);
+    save();
+    renderEmails();
+  });
+}
+
+function restoreEmail(key, sender) {
+  store.settings.mailHidden = (store.settings.mailHidden || []).filter((k) => k !== key);
+  if (sender) store.settings.mailSpamSenders = (store.settings.mailSpamSenders || []).filter((s) => s !== sender);
+  save();
+  renderEmails();
+  setStatus('Email restored');
 }
 
 function discordRow(m) {
@@ -2036,18 +2087,26 @@ function setView(mode) {
   if (mode === 'links') renderLinks();
   if (mode === 'focus') {
     if (typeof focusUpdateChip === 'function') focusUpdateChip();
-    if (typeof focusRefreshPicker === 'function') focusRefreshPicker();
   }
   if (mode === 'team') renderTeam();
 }
 
+// Only two looks now: light and night sky. Old 'auto' / 'dark' values migrate.
+function themeMode(value) {
+  if (value === 'night' || value === 'dark') return 'night';
+  if (value === 'light') return 'light';
+  try { return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'light'; } catch { return 'light'; }
+}
+
 function applyTheme() {
-  const mode = store.settings.theme || 'auto';
+  const mode = themeMode(store.settings.theme);
+  if (store.settings.theme !== mode) store.settings.theme = mode;
   const root = document.documentElement;
-  root.classList.remove('theme-light', 'theme-dark');
-  if (mode === 'light') root.classList.add('theme-light');
-  if (mode === 'dark') root.classList.add('theme-dark');
-  document.getElementById('theme').textContent = { auto: '\u{1F317}', light: '\u2600\uFE0F', dark: '\u{1F319}' }[mode];
+  root.classList.remove('theme-light', 'theme-night');
+  root.classList.add(mode === 'night' ? 'theme-night' : 'theme-light');
+  const btn = document.getElementById('theme');
+  btn.textContent = mode === 'night' ? '\u{1F319}' : '\u2600\uFE0F';
+  btn.title = mode === 'night' ? 'Switch to light' : 'Switch to night';
 }
 
 // ---------------------------------------------------------------------------
@@ -2154,9 +2213,13 @@ async function openSettings() {
   discordConnected = dst.connected;
   discordChannel = dst.channelName;
   updateDiscordUI();
+  const digestBox = document.getElementById('discord-digest-weekly');
+  if (digestBox) digestBox.checked = !!(store.settings.discord && store.settings.discord.digestWeekly);
 
   refreshMinutesInput.value = store.settings.refreshMinutes;
   if (fDeadlineWindow) fDeadlineWindow.value = store.settings.deadlineWindowDays || 2;
+  const planAhead = document.getElementById('f-plan-ahead');
+  if (planAhead) planAhead.value = (store.settings.team && store.settings.team.horizonDays) || 14;
 
   // AI sorting fields.
   const lcfg = store.settings.llm || {};
@@ -2275,12 +2338,23 @@ function wireSettings() {
   });
 
   if (fDeadlineWindow) fDeadlineWindow.addEventListener('change', () => {
-    const days = Math.max(1, Math.min(14, Number(fDeadlineWindow.value) || 2));
+    const days = Math.max(1, Math.min(30, Number(fDeadlineWindow.value) || 2));
     store.settings.deadlineWindowDays = days;
     fDeadlineWindow.value = days;
     save();
     renderTodos();
   });
+
+  const fPlanAhead = document.getElementById('f-plan-ahead');
+  if (fPlanAhead) {
+    fPlanAhead.value = (store.settings.team && store.settings.team.horizonDays) || 14;
+    fPlanAhead.addEventListener('change', () => {
+      const days = Math.max(1, Math.min(30, Number(fPlanAhead.value) || 14));
+      store.settings.team = { ...(store.settings.team || {}), horizonDays: days };
+      fPlanAhead.value = days;
+      save();
+    });
+  }
 
   // --- AI sorting (Gemini) ---
   if (llmEnabled) llmEnabled.addEventListener('change', () => {
@@ -2428,6 +2502,12 @@ function wireSettings() {
   });
 
   // --- Discord ---
+  const digestWeekly = document.getElementById('discord-digest-weekly');
+  if (digestWeekly) digestWeekly.addEventListener('change', () => {
+    store.settings.discord = { ...(store.settings.discord || {}), digestWeekly: digestWeekly.checked };
+    save();
+    setStatus(digestWeekly.checked ? 'Weekly digest on' : 'Weekly digest off');
+  });
   discordConnectBtn.addEventListener('click', async () => {
     const token = discordTokenInput.value.trim();
     const channel = discordChannelInput.value.trim();
@@ -2478,10 +2558,8 @@ function wireUI() {
     save();
   });
 
-  const order = ['auto', 'light', 'dark'];
   document.getElementById('theme').addEventListener('click', () => {
-    const next = order[(order.indexOf(store.settings.theme) + 1) % order.length];
-    store.settings.theme = next;
+    store.settings.theme = themeMode(store.settings.theme) === 'night' ? 'light' : 'night';
     applyTheme();
     save();
   });
@@ -2510,6 +2588,11 @@ function wireUI() {
     if (!window.widgetAPI.teamRun) return;
     window.widgetAPI.teamRun().then(applyTeam).catch((err) => console.warn('[team] ' + err.message));
   });
+  on('digest-post', 'click', async () => {
+    if (!window.widgetAPI.discordPostDigest) return;
+    const r = await window.widgetAPI.discordPostDigest();
+    setStatus(r.ok ? 'Digest posted to Discord' : 'Discord: ' + r.error);
+  });
   const newTaskList = document.getElementById('team-tasks');
   if (newTaskList) newTaskList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
@@ -2535,14 +2618,13 @@ function wireUI() {
       if (form) form.classList.toggle('hidden');
       return;
     }
-    if (btn.dataset.action === 'approve-all') {
-      const card = btn.closest('.pending-card');
-      if (!card) return;
-      card.querySelectorAll('[data-action="approve-proposal"]').forEach((part) => decideProposal(part.dataset.key, 'approve'));
+    if (btn.dataset.action === 'save-proposal') {
+      e.preventDefault();
+      saveProposalEdit(key);
       return;
     }
-    if (btn.dataset.action === 'approve-proposal' || btn.dataset.action === 'reject-proposal') {
-      decideProposal(key, btn.dataset.action === 'reject-proposal' ? 'reject' : 'approve');
+    if (btn.dataset.action === 'reject-proposal') {
+      decideProposal(key, 'reject');
     }
   });
 
@@ -2576,6 +2658,10 @@ function wireUI() {
     setTaskDone(box.dataset.id, box.checked);
   });
   document.body.addEventListener('click', (e) => {
+    const hide = e.target.closest('[data-action="hide-email"]');
+    if (hide) { hideEmail(hide.dataset.key); return; }
+    const restore = e.target.closest('[data-action="restore-email"]');
+    if (restore) { restoreEmail(restore.dataset.key, restore.dataset.sender || null); return; }
     const mail = e.target.closest('[data-action="open-email"]');
     if (mail) {
       if (mail.dataset.url) window.widgetAPI.openExternal(mail.dataset.url);

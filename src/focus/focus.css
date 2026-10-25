@@ -666,21 +666,6 @@
 .focus-app #timer { font-size: clamp(18px, 4vw, 30px); }
 .focus-app #timer.break { color: #3f8f6f; }   /* subtle tint during a break */
 
-/* Small "Focus on" picker under the timer buttons. */
-.focus-app .focus-on-row {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  margin: 12px auto 0; width: 80%; max-width: 330px;
-}
-.focus-app .focus-on-row label {
-  font-family: "Press Start 2P", monospace; font-size: 9px; color: #82505d; flex: none;
-}
-.focus-app .focus-on-row select {
-  flex: 1; min-width: 0;
-  font-family: "Baloo 2", sans-serif; font-size: 13px; font-weight: 600;
-  padding: 6px 8px; border: 3px solid #d1477a; border-radius: 8px;
-  background: #fff0f5; color: #a6285a; outline: none;
-}
-
 /* Narrow widget: scale the whole thing down — the frame is kept, never hidden. */
 @media (max-width: 700px) {
   .focus-app .app-container { padding: 52px 26px 50px; }  /* room for the frame */

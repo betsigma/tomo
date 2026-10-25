@@ -54,4 +54,33 @@ function normalizeDiscordMessage(m, channelName) {
   return item;
 }
 
-module.exports = { normalizeDiscordMessage };
+// The team digest as one Discord message: a heading plus bullet lines.
+// Discord rejects messages over 2,000 characters, so keep a margin.
+function digestMessage(teamDigest) {
+  const bullets = (Array.isArray(teamDigest) ? teamDigest : [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .map((s) => '• ' + s);
+  return ('📌 Team digest\n' + bullets.join('\n')).slice(0, 1900);
+}
+
+// This week's Monday at 09:00 local time.
+function weekStart(now) {
+  const d = new Date(now);
+  d.setHours(9, 0, 0, 0);
+  const sinceMonday = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - sinceMonday);
+  return d;
+}
+
+// True when the weekly post is enabled, the Monday 9 AM slot has passed, and
+// nothing has been posted since that slot.
+function weeklyDue(lastPostedAt, now, enabled) {
+  if (!enabled) return false;
+  const slot = weekStart(now);
+  if (now < slot) return false;
+  if (!lastPostedAt) return true;
+  return new Date(lastPostedAt) < slot;
+}
+
+module.exports = { normalizeDiscordMessage, digestMessage, weeklyDue, weekStart };

@@ -7,7 +7,8 @@
       "importance": 86,
       "reason": "MESA program email with a dated event that matches your current courses.",
       "event_date": "{{day+2}}",
-      "link": null
+      "link": null,
+      "category": "important"
     },
     {
       "subject": "Financial aid: action required by Friday",
@@ -16,7 +17,8 @@
       "importance": 92,
       "reason": "Deadline with financial consequences, from a trusted college domain.",
       "event_date": "{{day+4}}",
-      "link": null
+      "link": null,
+      "category": "important"
     },
     {
       "subject": "De Anza Weekly: club fair and library hours",
@@ -25,7 +27,18 @@
       "importance": 54,
       "reason": "Campus newsletter with one dated event.",
       "event_date": "{{day+3}}",
-      "link": null
+      "link": null,
+      "category": "important"
+    },
+    {
+      "subject": "50% off everything this weekend only",
+      "sender": "deals@example-shop.com",
+      "summary": "A store promotion with no campus or course information.",
+      "importance": 2,
+      "reason": "Advertisement, not a school or MESA message.",
+      "event_date": null,
+      "link": null,
+      "category": "advertisement"
     }
   ],
   "events": [

@@ -15,7 +15,8 @@
           "importance": { "type": "number", "minimum": 0, "maximum": 100 },
           "reason": { "type": "string" },
           "event_date": { "type": ["string", "null"] },
-          "link": { "type": ["string", "null"] }
+          "link": { "type": ["string", "null"] },
+          "category": { "enum": ["important", "spam", "advertisement"] }
         }
       }
     },

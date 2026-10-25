@@ -21,7 +21,7 @@
   const startImg = $('#startImg');
   const pauseImg = $('#pauseImg');
   const resetBtn = $('#resetBtn');
-  const focusOn = $('#focusOn');
+
 
   // Lengths come from the widget's Settings (Work / Break minutes).
   function readTimerSettings() {
@@ -37,9 +37,7 @@
   let totalSeconds = cfg.work * 60;
   let workBlockMinutes = cfg.work;    // length of the work block that is running
   let intervalId = null;
-  let focusTaskId = null;             // picked in the "Focus on" dropdown (null = auto)
 
-  // "Focus on" picker: incomplete tasks plus an (auto) option.
   function byDueSoonest(a, b) {
     const da = localDateOf(a.due), db = localDateOf(b.due);
     if (da && db) return (`${da} ${a.time || ''}`).localeCompare(`${db} ${b.time || ''}`);
@@ -48,26 +46,10 @@
     return 0;
   }
 
-  function renderFocusPicker() {
-    if (!focusOn) return;
-    const open = [...activeTodos()].filter((t) => !t.done).sort(byDueSoonest);
-    if (focusTaskId && !open.some((t) => t.id === focusTaskId)) focusTaskId = null;
-    focusOn.innerHTML = '<option value="">(auto)</option>' + open.map((t) =>
-      `<option value="${t.id}">${esc(t.title)}${t.pomodoros ? ' \u00B7 \u{1F345} ' + t.pomodoros : ''}</option>`).join('');
-    focusOn.value = focusTaskId || '';
-  }
-  if (focusOn) focusOn.addEventListener('change', () => { focusTaskId = focusOn.value || null; });
-
-  // Which task a finished WORK session credits:
-  //   1. the picked task, else
-  //   2. the last task you opened, else
-  //   3. the next incomplete task by due date.
+  // Which task a finished WORK session credits: the last task you opened,
+  // else the next incomplete task by due date.
   function pickCreditTask() {
     const open = [...activeTodos()].filter((t) => !t.done);
-    if (focusTaskId) {
-      const t = open.find((x) => x.id === focusTaskId);
-      if (t) return t;
-    }
     if (typeof lastOpenedTaskId !== 'undefined' && lastOpenedTaskId) {
       const t = open.find((x) => x.id === lastOpenedTaskId);
       if (t) return t;
@@ -488,7 +470,6 @@
     workBlockMinutes = cfg.work;
     totalSeconds = cfg.work * 60;
     updateDisplay();
-    renderFocusPicker();
   }
   // Called when the widget's Settings change the work/break lengths.
   function focusApplySettings() {
@@ -502,5 +483,4 @@
 
   window.focusInit = focusInit;
   window.focusApplySettings = focusApplySettings;
-  window.focusRefreshPicker = renderFocusPicker;
 })();

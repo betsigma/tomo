@@ -124,6 +124,29 @@
     return put(store, proposal, 'active', edits, id);
   }
 
+  // Study blocks join the calendar automatically, like tasks join the list.
+  // A rejected block leaves a dismissed tombstone, so it never comes back.
+  function autoAddProposals(store, outputs) {
+    const before = (store.events || []).length;
+    for (const p of listProposals(outputs)) {
+      if (p.kind === 'block') approveProposal(store, p, null, () => 'agent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
+    }
+    return (store.events || []).length - before;
+  }
+
+  // Edit an auto-added block in place, keeping its dedupe key.
+  function editProposal(store, proposal, edits) {
+    const hit = ((store && store.events) || []).find((e) => e && e.dedupeKey === proposal.key);
+    if (!hit) return approveProposal(store, proposal, edits, () => 'agent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
+    const fields = withEdits(proposal, edits);
+    hit.title = fields.title;
+    hit.start = fields.start;
+    hit.time = fields.time;
+    hit.endTime = fields.endTime;
+    hit.location = fields.location;
+    return store;
+  }
+
   function rejectProposal(store, proposal, id) {
     return put(store, proposal, 'dismissed', null, id);
   }
@@ -277,7 +300,23 @@
   function rejectTask(store, proposal) {
     if (!store.agentRejects) store.agentRejects = [];
     if (!store.agentRejects.includes(String(proposal.id))) store.agentRejects.push(String(proposal.id));
+    if (store.todos) {
+      store.todos = store.todos.filter((t) => {
+        if (!t) return false;
+        const sameAgent = String(t.agentTaskId || '') === String(proposal.id);
+        const sameId = t.source === 'agent' && String(t.id) === String(proposal.id);
+        return !(sameAgent || sameId);
+      });
+    }
     return store;
+  }
+
+  // Analyst tasks join the one task list without approval. Reject still removes
+  // one, and that id is remembered so it is not added back.
+  function autoAddTasks(store, outputs) {
+    const before = (store.todos || []).length;
+    for (const p of pendingTaskProposals(outputs, store)) approveTask(store, p, null);
+    return (store.todos || []).length - before;
   }
 
   // After a rerun, refresh the summary and priority on tasks already approved.
@@ -304,7 +343,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, rejectProposal, groupProposals, replacePending, briefBullets,
-    listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates
+    listProposals, pendingProposals, approveProposal, editProposal, autoAddProposals, rejectProposal, groupProposals, replacePending, briefBullets,
+    listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

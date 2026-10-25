@@ -133,7 +133,8 @@ function createOrchestrator(opts) {
       finish('MAIL', mail, `${emails.length} important email${emails.length === 1 ? '' : 's'} · ${mailEvents.length} date${mailEvents.length === 1 ? '' : 's'}`);
 
       // 2) Deadline & Task Analyst (only new/changed tasks carry a description)
-      const built = T.buildAnalystInput(store, state.analystCache, emails, now());
+      const horizon = (store.settings && store.settings.team && store.settings.team.horizonDays) || 14;
+      const built = T.buildAnalystInput(store, state.analystCache, emails, now(), { horizonDays: horizon });
       const aIn = built.input;
       const hashes = built.hashes;
       state.analystSent = { sent: built.sent, eligible: built.eligible };

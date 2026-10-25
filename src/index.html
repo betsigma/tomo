@@ -38,7 +38,7 @@
         <button id="teamBtn" class="btn" title="Agent team">&#10024;</button>
         <button id="settingsBtn" class="btn" title="Settings">&#9881;</button>
         <button id="pin"   class="btn" title="Toggle always-on-top">&#128204;</button>
-        <button id="theme" class="btn" title="Toggle light / dark">&#127769;</button>
+        <button id="theme" class="btn" title="Switch to night">&#9728;&#65039;</button>
         <button id="min"   class="btn" title="Minimize">&mdash;</button>
         <button id="close" class="btn danger" title="Close">&#10005;</button>
       </div>
@@ -121,13 +121,16 @@
       <section id="view-team" class="view hidden">
         <div class="team-head">
           <h3 class="section-title">Agent team</h3>
-          <button id="team-run" class="btn small primary" type="button">Run team</button>
+          <div class="row">
+            <button id="digest-post" class="btn small" type="button">Post digest</button>
+            <button id="team-run" class="btn small primary" type="button">Run team</button>
+          </div>
         </div>
         <p id="team-schedule" class="hint">Not run yet</p>
         <p id="team-loading" class="team-loading hidden">The team is working&hellip;</p>
         <div id="team-chart" class="team-chart"></div>
         <h3 class="section-title">New tasks</h3>
-        <p class="hint">The Analyst proposes these. Approve to add them to your one task list.</p>
+        <p class="hint">The Analyst adds these to your task list automatically. Reject one to remove it.</p>
         <ul id="team-tasks" class="pending-list"></ul>
 
         <h3 class="section-title">Pending study blocks</h3>
@@ -154,10 +157,6 @@
                     <img id="pauseImg" src="focus/assets/images/pause-btn.png" alt="Pause" class="hidden" />
                   </button>
                   <button id="resetBtn" class="img-btn"><img src="focus/assets/images/reset-btn.png" alt="Reset" /></button>
-                </div>
-                <div class="focus-on-row">
-                  <label for="focusOn">Focus on</label>
-                  <select id="focusOn"></select>
                 </div>
               </div>
 
@@ -388,6 +387,7 @@
             <button id="discord-disconnect" class="btn small danger hidden">Disconnect</button>
             <button id="discord-connect" class="btn small primary">Connect</button>
           </div>
+          <label class="field-inline"><span><input id="discord-digest-weekly" type="checkbox" /> Post the team digest here weekly (Monday 9 AM)</span></label>
         </div>
 
         <!-- Gmail re-sync preview: nothing is created until you click Apply -->
@@ -455,8 +455,13 @@
           <h4>Deadlines</h4>
           <label class="field-inline">
             <span>Show assignments</span>
-            <input id="f-deadline-window" type="number" min="1" max="14" />
+            <input id="f-deadline-window" type="number" min="1" max="30" />
             <span>days before they're due</span>
+          </label>
+          <label class="field-inline">
+            <span>Plan ahead</span>
+            <input id="f-plan-ahead" type="number" min="1" max="30" />
+            <span>days (agents look this far)</span>
           </label>
         </div>
 

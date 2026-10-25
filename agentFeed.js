@@ -10,15 +10,41 @@
   else root.Feed = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
 
+  function mailKey(m) {
+    return String(m.sender || '') + '::' + String(m.subject || '');
+  }
+
   function mapEmails(output) {
     const events = (output && output.events) || [];
     return ((output && output.important_emails) || []).map((m) => ({
+      key: mailKey(m),
       from: m.sender || '',
       subject: m.subject || '',
       link: m.link || '',
       summary: m.summary || '',
+      category: m.category || 'important',
+      reason: m.reason || '',
       events: events.filter((e) => e.source_subject === m.subject)
     }));
+  }
+
+  // Split the agent list into what to show and what it marked spam/ad.
+  // Hidden keys and spam senders are removed entirely.
+  function splitMail(emails, o) {
+    const hidden = new Set((o.hiddenKeys || []).map(String));
+    const spamSenders = new Set((o.spamSenders || []).map((s) => String(s).toLowerCase()));
+    const kept = [];
+    const spam = [];
+    const hiddenMail = [];
+    for (const e of emails) {
+      if (hidden.has(e.key) || spamSenders.has(String(e.from).toLowerCase())) {
+        hiddenMail.push(e);
+        continue;
+      }
+      if (e.category !== 'important') spam.push(e);
+      else kept.push(e);
+    }
+    return { kept, spam, hidden: hiddenMail };
   }
 
   function emailList(opts) {
@@ -27,16 +53,18 @@
     const mail = o.mail || {};
     if (live) {
       if (mail.status === 'running') {
-        return { kind: 'working', emails: [], banner: 'Mail Scanner is working…' };
+        return { kind: 'working', emails: [], spam: [], hidden: [], banner: 'Mail Scanner is working…' };
       }
       const failed = mail.status === 'error' || mail.mode === 'mock' || !o.mailOutput;
-      if (failed) return { kind: 'offline', emails: [], banner: 'Mail Scanner offline' };
-      return { kind: 'agent', emails: mapEmails(o.mailOutput), banner: null };
+      if (failed) return { kind: 'offline', emails: [], spam: [], hidden: [], banner: 'Mail Scanner offline' };
+      const split = splitMail(mapEmails(o.mailOutput), o);
+      return { kind: 'agent', emails: split.kept, spam: split.spam, hidden: split.hidden, banner: null };
     }
     if (o.localSyncEnabled) {
-      return { kind: 'local', emails: o.localEmails || [], banner: null };
+      return { kind: 'local', emails: o.localEmails || [], spam: [], hidden: [], banner: null };
     }
-    return { kind: 'mock', emails: mapEmails(o.mailOutput), banner: 'mock' };
+    const split = splitMail(mapEmails(o.mailOutput), o);
+    return { kind: 'mock', emails: split.kept, spam: split.spam, hidden: split.hidden, banner: 'mock' };
   }
 
   function visibleEvents(events, globalMode) {
