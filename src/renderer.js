@@ -580,6 +580,9 @@ function renderTodos() {
 
   const banner = taskListBanner();
   const todayItems = [...overdue, ...dueToday];
+  const now = new Date();
+  setText('day-name', now.toLocaleDateString(undefined, { weekday: 'long' }));
+  setText('day-sub', `${now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${todayItems.length} to do`);
   if (!todayItems.length) {
     setHTML('today-list', banner + '<li class="empty-note">Nothing due today.</li>');
   } else {
@@ -610,7 +613,7 @@ function renderTodos() {
       (a.done - b.done) || (`${localDateOf(a.due)} ${a.time || ''}`).localeCompare(`${localDateOf(b.due)} ${b.time || ''}`));
   setHTML('all-list',
     banner + (allSorted.length ? allSorted.map((t) => todoRow(t, localDateOf(t.due))).join('') : '<li class="empty-note">No tasks yet. Add one below.</li>'));
-
+  if (typeof focusUpdateChip === 'function') focusUpdateChip();   // "Up next" follows the list
 
 }
 
@@ -676,9 +679,6 @@ function renderEmails() {
       : view.banner
         ? `<li class="empty-note">${esc(view.banner)}</li>`
         : '';
-  const compactHTML = banner + (list.length
-    ? list.slice(0, 3).map((e) => emailRow(e)).join('')
-    : (banner ? '' : '<li class="empty-note">No matching emails.</li>'));
   const hidden = view.hidden || [];
   const spamToggle = spam.length
     ? `<li class="email-spam"><details><summary>Spam &amp; ads (${spam.length})</summary><ul class="email-list">${spam.map((e) => emailRow(e)).join('')}</ul></details></li>`
@@ -690,8 +690,21 @@ function renderEmails() {
     ? list.map((e) => emailRow(e)).join('')
     : (banner ? '' : '<li class="empty-note">No matching emails.</li>')) + spamToggle + hiddenToggle;
 
-  setHTML('email-list-compact', compactHTML);
   setHTML('email-list', fullHTML);
+  renderFeedPill();
+}
+
+// Today view: one line instead of the email and Discord lists; click opens Week.
+function renderFeedPill() {
+  const pill = document.getElementById('feed-pill');
+  if (!pill) return;
+  const emails = (emailView().emails || []).length;
+  const posts = (store.discord || []).length;
+  const parts = [];
+  if (emails) parts.push(`${emails} email${emails === 1 ? '' : 's'}`);
+  if (posts) parts.push(`${posts} Discord post${posts === 1 ? '' : 's'}`);
+  pill.classList.toggle('hidden', !parts.length);
+  pill.innerHTML = `<span>${esc(parts.join(' · '))}</span><span class="feed-pill-go">See all</span>`;
 }
 
 function hideEmail(key) {
@@ -728,15 +741,12 @@ function discordRow(m) {
 
 function renderDiscord() {
   const list = store.discord || [];
-  const compactHTML = list.length
-    ? list.slice(0, 2).map(discordRow).join('')
-    : '<li class="empty-note">No Discord messages.</li>';
   const fullHTML = list.length
     ? list.map(discordRow).join('')
     : '<li class="empty-note">No Discord messages. Connect a channel in Settings.</li>';
 
-  setHTML('discord-list-compact', compactHTML);
   setHTML('discord-list', fullHTML);
+  renderFeedPill();
 }
 
 // ---------------------------------------------------------------------------
@@ -2567,6 +2577,7 @@ function wireUI() {
   });
 
   document.getElementById('linksBtn').addEventListener('click', () => setView('links'));
+  document.getElementById('feed-pill').addEventListener('click', () => setView('expanded'));
 
   // The "more" menu: open on click, close on any click elsewhere or on an item.
   const moreBtn = document.getElementById('moreBtn');

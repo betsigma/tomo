@@ -437,9 +437,13 @@
     const text = timerDisplay ? timerDisplay.textContent : '';
     const chip = document.getElementById('compact-timer');
     if (chip) {
-      chip.classList.toggle('hidden', !show);
+      // Always offer the next task here; it's the one a finished session is credited to.
+      const task = pickCreditTask();
+      chip.classList.toggle('hidden', !show && !task);
       const label = document.getElementById('compact-timer-label');
-      if (label) label.textContent = phase === 'break' ? '\u2615 Break' : '\u{1F345} Focus';
+      if (label) label.textContent = phase === 'break' ? 'Break' : (running ? 'Focusing on' : 'Up next \u00b7 focus');
+      const taskEl = document.getElementById('compact-timer-task');
+      if (taskEl) taskEl.textContent = task ? task.title : '';
       const timeEl = document.getElementById('compact-timer-time');
       if (timeEl) timeEl.textContent = text;
       const btn = document.getElementById('compact-timer-toggle');

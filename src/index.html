@@ -79,22 +79,31 @@
 
       <!-- ---------- COMPACT VIEW: today's tasks + next 3 deadlines ---------- -->
       <section id="view-compact" class="view">
-        <div id="compact-timer" class="compact-timer hidden">
-          <span id="compact-timer-label">&#127813; Focus</span>
-          <span id="compact-timer-time">25:00</span>
-          <button id="compact-timer-toggle" class="btn small">Start</button>
+        <div class="day-head">
+          <h2 id="day-name"></h2>
+          <span id="day-sub"></span>
         </div>
-        <h3 class="section-title">&#11088; Today</h3>
+
+        <div id="compact-timer" class="compact-timer hidden">
+          <span class="timer-badge" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4"/></svg>
+          </span>
+          <span class="timer-text">
+            <span id="compact-timer-label">Up next &middot; focus</span>
+            <span id="compact-timer-task"></span>
+          </span>
+          <span id="compact-timer-time">25:00</span>
+          <button id="compact-timer-toggle" class="btn small primary">Start</button>
+        </div>
+
+        <h3 class="section-title">Today</h3>
         <ul id="today-list" class="todo-list"></ul>
 
-        <h3 class="section-title">Next deadlines</h3>
+        <h3 class="section-title">Coming up</h3>
         <ul id="upcoming-list" class="todo-list"></ul>
 
-        <h3 class="section-title">Important emails</h3>
-        <ul id="email-list-compact" class="email-list"></ul>
-
-        <h3 class="section-title">Discord</h3>
-        <ul id="discord-list-compact" class="discord-list"></ul>
+        <!-- Emails and Discord live in the Week view; this pill just says how many. -->
+        <button id="feed-pill" class="feed-pill hidden" type="button"></button>
 
         <!-- Add a task -->
         <form class="add-form todo-form">
