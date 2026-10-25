@@ -756,35 +756,55 @@ html.theme-night .morning-brief { background: #2a2a40; }
 }
 .morning-brief strong { display: block; font-size: 11px; margin-bottom: 2px; }
 .team-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.team-head .section-title { margin: 0; }
+.team-head h2 { font-size: 22px; font-weight: 800; line-height: 1.1; }
 .team-loading { font-size: 12px; color: var(--accent-2); margin: 0 0 8px; }
 .team-chart { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
 .team-node {
+  display: flex; align-items: center; gap: 10px;
   border: 1px solid var(--border); border-radius: 14px;
   background: var(--panel); padding: 8px 10px;
   box-shadow: 0 2px 6px var(--shadow);
 }
-.team-node.is-running { border-color: var(--accent); }
+.team-node.is-running { border-color: var(--outline); box-shadow: 0 0 0 4px var(--hover); }
 .team-node.is-error { border-color: var(--danger); background: #fff5f7; }
 html.theme-night .team-node.is-error { background: #33202b; }
-.team-node.is-mock { border-color: var(--lavender); }
-.team-node-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.team-name { font-weight: 700; font-size: 13px; }
-.team-status {
-  font-size: 10px; font-weight: 800; letter-spacing: 0.03em;
-  text-transform: uppercase; border-radius: 999px; padding: 2px 8px;
-  background: var(--hover); color: var(--text);
+.team-node.is-mock { border-style: dashed; border-color: var(--muted); background: transparent; box-shadow: none; }
+.team-icon {
+  width: 34px; height: 34px; flex: none; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 1px var(--outline); color: #6b2d4f;
 }
-.team-status.running { background: var(--accent); color: #fff; }
-.team-status.done { background: #e7f6ea; color: #3d7a4a; }
-.team-status.error { background: #ffe3ea; color: var(--danger); }
-.team-status.mock { background: var(--lavender); color: #4a3470; }
-.team-meta, .team-error, .team-sent { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.team-icon svg {
+  width: 18px; height: 18px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.team-icon.role-mail { background: var(--src-gmail); }
+.team-icon.role-analyst { background: var(--src-canvas); }
+.team-icon.role-planner { background: var(--src-agent); }
+.team-icon.role-digest { background: var(--src-manual); }
+.team-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.team-name { font-weight: 800; font-size: 14px; }
+.team-node-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.team-status {
+  flex: none; font-size: 11px; font-weight: 800;
+  border-radius: 999px; padding: 3px 10px;
+  border: 1px solid var(--border); background: var(--hover); color: var(--text);
+}
+.team-status.running { background: var(--accent); color: #6b2d4f; border-color: var(--outline); }
+.team-status.done { background: #c9eed6; color: #1f5c36; border-color: #1f5c36; }
+.team-status.error { background: #ffe3ea; color: #a3233f; border-color: #a3233f; }
+.team-status.mock { background: #eee6ea; color: #5c4552; border: 1px dashed #5c4552; }
+.team-meta, .team-error, .team-sent { font-size: 11px; color: var(--muted); margin-top: 1px; }
 .team-error { color: var(--danger); }
 .team-arrow {
-  align-self: center; text-align: center; font-size: 11px; color: var(--muted);
-  padding: 3px 0 4px; max-width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 0 2px 21px; font-size: 11px; font-weight: 700; color: var(--muted);
 }
+.team-arrow svg {
+  width: 12px; height: 24px; flex: none;
+  fill: none; stroke: var(--outline); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.team-arrow.is-waiting svg { stroke: var(--border); stroke-dasharray: 3 4; }
 .pending-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .pending-item {
   border: 1px solid var(--border); border-radius: 12px;

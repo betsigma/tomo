@@ -298,6 +298,14 @@ function renderMorningBrief() {
     : '';
 }
 
+const STATUS_LABELS = { idle: 'Idle', running: 'Working', done: 'Done', error: 'Error', mock: 'Mock' };
+const ROLE_ICONS = {
+  MAIL: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  ANALYST: '<svg viewBox="0 0 24 24"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="18" cy="6" r="2"/></svg>',
+  PLANNER: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 14h3"/></svg>',
+  DIGEST: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>'
+};
+
 function renderTeam() {
   const chart = document.getElementById('team-chart');
   if (!chart) return;
@@ -324,10 +332,14 @@ function renderTeam() {
     const when = node.at ? `<div class="team-meta">${esc(shortWhen(node.at))}${node.cached ? ' · cached' : ''}</div>` : '';
     const err = node.error ? `<div class="team-error">${esc(node.error)}</div>` : '';
     const arrow = i < order.length - 1
-      ? `<div class="team-arrow">&#8595; ${esc(node.handoff || '')}</div>` : '';
+      ? `<div class="team-arrow${node.handoff ? '' : ' is-waiting'}"><svg viewBox="0 0 12 24" aria-hidden="true"><path d="M6 1v20M2 17l4 4 4-4"/></svg><span>${esc(node.handoff || 'waiting')}</span></div>` : '';
     return `<article class="team-node is-${esc(status)}">
-      <div class="team-node-top"><span class="team-name">${esc(node.name || role)}</span><span class="team-status ${esc(status)}">${esc(status)}</span></div>
-      ${when}${sent}${err}
+      <span class="team-icon role-${esc(role.toLowerCase())}" aria-hidden="true">${ROLE_ICONS[role] || ''}</span>
+      <div class="team-body">
+        <span class="team-name">${esc(node.name || role)}</span>
+        ${when}${sent}${err}
+      </div>
+      <span class="team-status ${esc(status)}">${esc(STATUS_LABELS[status] || status)}</span>
     </article>${arrow}`;
   }).join('');
 
