@@ -398,6 +398,28 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--hover); }
 .swatch.gmail   { background: var(--src-gmail); }
 .swatch.discord { background: var(--src-discord); }
 .swatch.agent   { background: var(--src-agent); }
+.swatch.pending { background: transparent; border: 1.5px dashed var(--outline); }
+
+/* ---------- WEEK VIEW: calendar + sidebar ---------- */
+.week-layout { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 14px; align-items: start; }
+.week-main, .week-side { min-width: 0; }
+.week-side .section-title:first-of-type { margin-top: 10px; }
+@media (max-width: 599px) { .week-layout { grid-template-columns: minmax(0, 1fr); } }
+.heads-up {
+  padding: 10px 12px; margin-bottom: 8px;
+  border: 1px solid var(--outline); border-radius: 16px;
+  background: var(--butter); color: var(--text);
+  font-size: 12px; font-weight: 600; line-height: 1.45;
+}
+html.theme-night .heads-up { background: #2a2a40; }
+.heads-up strong { display: block; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 2px; }
+.heads-up p + p { margin-top: 4px; }
+#week-review { margin: 0 0 4px; }
+.fc .fc-event.ev-pending {
+  background: #fff7ec; border: 1.5px dashed var(--outline); color: #6b2d4f; cursor: pointer;
+}
+html.theme-night .fc .fc-event.ev-pending { background: transparent; color: var(--text); }
+.fc .fc-event.ev-pending .fc-event-main, .fc .fc-event.ev-pending .fc-event-title { color: inherit; }
 
 /* ---------- STATUS BAR ---------- */
 .statusbar {

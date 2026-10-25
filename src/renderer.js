@@ -347,6 +347,7 @@ function renderTeam() {
   if (!pending) return;
   pending.innerHTML = pendingMarkup(state);
   updateInboxBadge();
+  renderWeekReview();
 }
 
 // Tab badge: how many suggestions are listed in the Inbox right now.
@@ -473,6 +474,8 @@ function applyTeam(state) {
   }
   renderMorningBrief();
   renderTeam();
+  renderHeadsUp();
+  renderCalendar();          // pending study blocks are drawn from the team output
   renderTaskInbox();
   renderEmails();
   renderTodos();
@@ -1108,6 +1111,7 @@ function toFCEvent(ev, opts = {}) {
     id: opts.id || ev.id,
     title: ev.title,
     start: ev.time ? `${ev.start}T${ev.time}` : ev.start,
+    end: ev.time && ev.endTime && ev.endTime > ev.time ? `${ev.start}T${ev.endTime}` : undefined,
     allDay: !ev.time,
     backgroundColor: color,
     borderColor: color,
@@ -1141,17 +1145,59 @@ function eventsInRange(from, to) {
   return out;
 }
 
+// Study blocks still waiting in the Inbox, drawn dashed. Display only: never stored.
+function pendingBlocksInRange(from, to) {
+  if (!teamState || typeof Inbox === 'undefined') return [];
+  return Inbox.pendingProposals(teamState.outputs, store)
+    .filter((p) => p.kind === 'block' && p.start >= from && p.start < to)
+    .map((p) => ({
+      id: 'pending:' + p.key,
+      title: p.title,
+      start: p.time ? `${p.start}T${p.time}` : p.start,
+      end: p.time && p.endTime ? `${p.start}T${p.endTime}` : undefined,
+      allDay: !p.time,
+      classNames: ['ev-pending'],
+      extendedProps: { pending: true, source: 'agent' }
+    }));
+}
+
+// Analyst crunch weeks for the Week sidebar.
+function renderHeadsUp() {
+  const el = document.getElementById('heads-up');
+  if (!el) return;
+  const weeks = (teamState && teamState.outputs && teamState.outputs.ANALYST && teamState.outputs.ANALYST.crunch_weeks) || [];
+  el.classList.toggle('hidden', !weeks.length);
+  el.innerHTML = weeks.length
+    ? `<strong>Heads up</strong>${weeks.map((w) => `<p>Week of ${esc(formatDue(w.week_start))}: ${esc(w.reason || '')}</p>`).join('')}`
+    : '';
+}
+
+// "N blocks suggested" pill above the task list; opens the Inbox.
+function renderWeekReview() {
+  const pill = document.getElementById('week-review');
+  if (!pill) return;
+  const n = (teamState && typeof Inbox !== 'undefined')
+    ? Inbox.pendingProposals(teamState.outputs, store).filter((p) => p.kind === 'block').length : 0;
+  pill.classList.toggle('hidden', !n);
+  pill.innerHTML = `<span>${n} dashed block${n === 1 ? ' is a suggestion' : 's are suggestions'}</span><span class="feed-pill-go">Review</span>`;
+}
+
 function initCalendar() {
   calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-    initialView: 'dayGridMonth',
-    headerToolbar: { left: 'prev', center: 'title', right: 'next' },
+    initialView: store.settings.calView || 'timeGridWeek',
+    headerToolbar: { left: 'prev,next', center: 'title', right: 'timeGridWeek,dayGridMonth' },
+    buttonText: { timeGridWeek: 'Week', dayGridMonth: 'Month' },
     height: 'auto',
     dayMaxEvents: 2,          // at most 2 chips per day, then "+N more"
     fixedWeekCount: false,
+    slotMinTime: '08:00:00',
+    slotMaxTime: '22:00:00',
+    nowIndicator: true,
+    datesSet: (info) => { store.settings.calView = info.view.type; },
     events: (info, success) => {
       const from = info.startStr.slice(0, 10);
       const to = info.endStr.slice(0, 10);
-      success(eventsInRange(from, to));
+      success(eventsInRange(from, to).concat(pendingBlocksInRange(from, to)));
       // Dots/count (compact mode) are painted onto the day cells after render.
       setTimeout(refreshDayDots, 0);
     },
@@ -1159,6 +1205,7 @@ function initCalendar() {
     eventClick: (arg) => {
       arg.jsEvent.preventDefault();
       console.log('[ui] calendar eventClick', arg.event.id);
+      if (arg.event.extendedProps.pending) { setView('inbox'); return; }
       openEventPanel(arg.event.id);
     },
     // "+N more" -> our own day list instead of FullCalendar's popover.
@@ -1171,7 +1218,7 @@ function initCalendar() {
       return false;
     },
     // Clicking a day number or the empty part of a cell -> day list panel.
-    dateClick: (arg) => openDayList(arg.dateStr)
+    dateClick: (arg) => openDayList(arg.dateStr.slice(0, 10))
   });
   calendar.render();
   updateCalMode();
@@ -2605,6 +2652,7 @@ function wireUI() {
 
   document.getElementById('linksBtn').addEventListener('click', () => setView('links'));
   document.getElementById('feed-pill').addEventListener('click', () => setView('expanded'));
+  document.getElementById('week-review').addEventListener('click', () => setView('inbox'));
 
   // The "more" menu: open on click, close on any click elsewhere or on an item.
   const moreBtn = document.getElementById('moreBtn');

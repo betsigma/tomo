@@ -119,7 +119,8 @@
       </section>
 
       <!-- ---------- EXPANDED VIEW: month calendar + all tasks ---------- -->
-      <section id="view-expanded" class="view hidden">
+      <section id="view-expanded" class="view hidden week-layout">
+       <div class="week-main">
         <div id="calendar"></div>
 
         <div class="legend">
@@ -128,7 +129,13 @@
           <span><i class="swatch gmail"></i>Gmail</span>
           <span><i class="swatch discord"></i>Discord</span>
           <span><i class="swatch agent"></i>Agent</span>
+          <span><i class="swatch pending"></i>Suggested</span>
         </div>
+       </div>
+
+       <aside class="week-side">
+        <div id="heads-up" class="heads-up hidden"></div>
+        <button id="week-review" class="feed-pill hidden" type="button"></button>
 
         <h3 class="section-title">All tasks</h3>
         <ul id="all-list" class="todo-list"></ul>
@@ -144,6 +151,7 @@
           <input class="todo-due" type="date" title="Due date (optional)" />
           <button type="submit" class="btn small primary">Add</button>
         </form>
+       </aside>
       </section>
 
       <!-- ---------- LINKS VIEW: saved links & details ---------- -->
