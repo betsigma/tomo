@@ -271,13 +271,17 @@ function createClient(opts = {}) {
     }
     const arts = Array.isArray(r.artifacts) ? r.artifacts : [];
     const ordered = [...arts].sort((a, b) => Number(/json/i.test(b.type + b.title)) - Number(/json/i.test(a.type + a.title)));
+    let artifactErr = null;
     for (const a of ordered.slice(0, 3)) {
       try {
         const text = await downloadArtifact(role, runId, a.id);
         return { output: checkOutput(role, extractJson(text)), from: 'artifact' };
-      } catch (err) { firstErr = firstErr || err; }
+      } catch (err) { artifactErr = artifactErr || err; }
     }
-    throw firstErr || new Error('The agent reply contained no JSON object.');
+    // When the agent attached a file, its problem is the useful one: the text is
+    // often just a summary of that file.
+    if (artifactErr) artifactErr.message = 'Attached file: ' + artifactErr.message;
+    throw artifactErr || firstErr || new Error('The agent reply contained no JSON object.');
   }
 
   // Start a run and poll it to a terminal state. Returns the final run object.
