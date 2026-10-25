@@ -80,6 +80,8 @@ function sampleInput(role) {
       { id: 't2', title: 'Reading response 4', due_date: today, course: 'ENGL 1A', description: null }
     ],
     important_emails: [{ subject: 'Financial aid: action required by Friday', summary: 'Upload one missing document.', event_date: today }],
+    discord_messages: [{ id: 'd1', channel: 'announcements', posted_at: new Date().toISOString(),
+      text: 'Women in STEM general meeting\nThis Thursday, 5-6pm in S34. Officer elections!' }],
     today
   };
   if (role === 'PLANNER') return {
