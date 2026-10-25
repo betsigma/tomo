@@ -98,7 +98,12 @@ ${text}`;
 // ---------------------------------------------------------------------------
 // Returns the model's text answer. Throws an Error with .code === 'RATE_LIMIT'
 // on HTTP 429 so the caller can back off / stop.
-async function callModel({ prompt, model = DEFAULT_MODEL, apiKey, fetchImpl = fetch, timeoutMs = 60000 }) {
+async function callModel({ prompt, model = DEFAULT_MODEL, apiKey, fetchImpl = fetch, timeoutMs = 60000, creaoMode } = {}) {
+  if (String(creaoMode || process.env.CREAO_MODE || '').toLowerCase() === 'live') {
+    const e = new Error('Gemini is disabled while CREAO_MODE=live');
+    e.code = 'LIVE_BLOCKED';
+    throw e;
+  }
   if (!apiKey) { const e = new Error('Missing API key'); e.code = 'NO_KEY'; throw e; }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const ctrl = new AbortController();

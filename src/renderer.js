@@ -51,7 +51,10 @@ let store = {
     timer: { work: 25, break: 5, notify: true, sound: true },
     music: { track: 0, shuffle: false, loop: false },
     discord: { limit: 25 },
-    discordMeta: {}
+    discordMeta: {},
+    // Migration + hidden restore switch. Default off: Canvas stays agent input.
+    migration: {},
+    dev: { restoreCanvasTodos: false }
   }
 };
 
@@ -168,8 +171,12 @@ function setStatus(msg) {
 // decision; 'dismissed' items are tombstones (kept in the file, never shown);
 // 'filtered' items were hidden by the learned filter and wait in Settings.
 function activeEvents() {
-  return (store.events || []).filter((e) =>
+  let events = (store.events || []).filter((e) =>
     e.status !== 'dismissed' && e.status !== 'suggested' && e.status !== 'filtered');
+  if (typeof Feed !== 'undefined' && teamState && teamState.globalMode === 'live') {
+    events = Feed.visibleEvents(events, 'live');
+  }
+  return events;
 }
 function activeTodos() {
   return (store.todos || []).filter((t) => t.status !== 'dismissed' && t.status !== 'suggested' && t.status !== 'filtered');
@@ -201,14 +208,42 @@ async function load() {
     ml: { ...store.settings.ml, ...(s.ml || {}) },
     timer: { ...store.settings.timer, ...(s.timer || {}) },
     music: { ...store.settings.music, ...(s.music || {}) },
-    discord: { ...store.settings.discord, ...(s.discord || {}) }
+    discord: { ...store.settings.discord, ...(s.discord || {}) },
+    migration: { ...store.settings.migration, ...(s.migration || {}) },
+    dev: { ...store.settings.dev, ...(s.dev || {}) }
   };
+  migrateCanvasTodos();
+}
+
+// One-time move: Canvas to-dos leave the visible list and become agent input.
+// Nothing is deleted; they are kept in store.archived.legacy_canvas.
+function migrateCanvasTodos() {
+  if (store.settings.dev && store.settings.dev.restoreCanvasTodos) return;
+  if (store.settings.migration && store.settings.migration.canvasToArchive) return;
+  const canvasTodos = (store.todos || []).filter((t) => t && t.source === 'canvas');
+  if (!store.archived) store.archived = {};
+  store.archived.legacy_canvas = (store.archived.legacy_canvas || []).concat(canvasTodos);
+  store.todos = (store.todos || []).filter((t) => !t || t.source !== 'canvas');
+  store.settings.migration.canvasToArchive = true;
+  console.log(`[migrate] moved ${canvasTodos.length} Canvas task(s) to archived.legacy_canvas`);
+  save();
 }
 
 // ---------------------------------------------------------------------------
 // 4. To-do list
 // ---------------------------------------------------------------------------
 let teamState = null;
+
+function analystOffline() {
+  if (!teamState || teamState.globalMode !== 'live') return false;
+  const n = teamState.nodes && teamState.nodes.ANALYST;
+  return !n || n.status === 'error' || n.mode === 'mock';
+}
+
+function taskListBanner() {
+  if (!analystOffline()) return '';
+  return '<li class="empty-note mail-offline">Task Analyst offline</li>';
+}
 
 function taskSummary(id) {
   const tasks = teamState && teamState.outputs && teamState.outputs.ANALYST && teamState.outputs.ANALYST.tasks;
@@ -228,8 +263,19 @@ function mailScannerLive() {
 }
 
 function updateGeminiControls() {
+  const live = !!(teamState && teamState.globalMode === 'live') || mailScannerLive();
+  const llmSection = document.getElementById('llm-section');
+  const mlSection = document.getElementById('ml-section');
+  const mlNote = document.getElementById('ml-live-note');
+  const localNote = document.getElementById('gmail-local-note');
+  const localBox = document.getElementById('gmail-local');
+  if (llmSection) llmSection.classList.toggle('hidden', live);
+  if (mlNote) mlNote.classList.toggle('hidden', !live);
+  if (mlSection) mlSection.classList.toggle('is-disabled', live);
+  if (localNote) localNote.classList.toggle('hidden', !live);
+  if (localBox) localBox.disabled = live;
+  if (mlEnabledInput) mlEnabledInput.disabled = live;
   if (!llmEnabled) return;
-  const live = mailScannerLive();
   const note = document.getElementById('llm-live-note');
   if (note) note.classList.toggle('hidden', !live);
   llmEnabled.disabled = live;
@@ -241,9 +287,12 @@ function renderMorningBrief() {
   const el = document.getElementById('morning-brief');
   if (!el) return;
   const text = teamState && teamState.outputs && teamState.outputs.DIGEST && teamState.outputs.DIGEST.morning_brief;
-  const brief = String(text || '').trim();
-  el.classList.toggle('hidden', !brief);
-  el.innerHTML = brief ? `<strong>Morning brief</strong>${esc(brief)}` : '';
+  const bullets = (typeof Inbox !== 'undefined') ? Inbox.briefBullets(text) : [];
+  el.classList.toggle('hidden', !bullets.length);
+  const mock = teamState && teamState.globalMode === 'mock' ? '<span class="mock-note">mock</span>' : '';
+  el.innerHTML = bullets.length
+    ? `${mock}<strong>Morning brief</strong><ul class="brief-list">${bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>`
+    : '';
 }
 
 function renderTeam() {
@@ -260,7 +309,8 @@ function renderTeam() {
   if (runBtn) runBtn.disabled = !!state.running;
   const last = state.lastRun && state.lastRun.at ? 'Last run ' + shortWhen(state.lastRun.at) : 'Not run yet';
   const next = state.nextRunAt ? ' · next ' + shortWhen(state.nextRunAt) : '';
-  setText('team-schedule', last + next);
+  const mockTag = state.globalMode === 'mock' ? 'mock · ' : '';
+  setText('team-schedule', mockTag + last + next);
 
   const order = state.order || [];
   chart.innerHTML = order.map((role, i) => {
@@ -280,10 +330,53 @@ function renderTeam() {
 
   const pending = document.getElementById('team-pending');
   if (!pending) return;
-  const proposals = (typeof Inbox !== 'undefined')
-    ? Inbox.pendingProposals(state.outputs, store)
-    : [];
-  pending.innerHTML = proposals.length ? proposals.map(pendingRow).join('') : '<li class="empty-note">Nothing waiting yet.</li>';
+  pending.innerHTML = pendingMarkup(state);
+}
+
+function dueByTask() {
+  const due = {};
+  for (const t of store.todos || []) if (t && t.id && t.due) due[t.id] = String(t.due).slice(0, 10);
+  const ranked = teamState && teamState.outputs && teamState.outputs.ANALYST && teamState.outputs.ANALYST.tasks;
+  for (const t of ranked || []) if (t && t.id && t.due_date && !due[t.id]) due[t.id] = String(t.due_date).slice(0, 10);
+  return due;
+}
+
+function pendingMarkup(state) {
+  if (typeof Inbox === 'undefined') return '<li class="empty-note">Nothing waiting yet.</li>';
+  const decided = new Set((store.events || []).filter((e) => e && e.dedupeKey).map((e) => e.dedupeKey));
+  const raw = ((state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [])
+    .filter((p) => !decided.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
+  const cards = Inbox.groupProposals(raw, dueByTask());
+  const singles = Inbox.pendingProposals(state.outputs, store).filter((p) => p.kind !== 'block');
+  const html = cards.map(taskCard).concat(singles.map(pendingRow)).join('');
+  return html || '<li class="empty-note">Nothing waiting yet.</li>';
+}
+
+function taskCard(card) {
+  const late = card.blocks.some((b) => b.afterDeadline);
+  const parts = card.blocks.map((b) => `<li class="pending-part${b.afterDeadline ? ' after-deadline' : ''}">
+    <span>${esc(b.label)}${b.afterDeadline ? ' · after deadline' : ''}</span>
+    <span class="pending-actions">
+      <button type="button" class="btn small primary" data-action="approve-proposal" data-key="${esc(b.key)}">Approve</button>
+      <button type="button" class="btn small" data-action="edit-proposal" data-key="${esc(b.key)}">Edit</button>
+      <button type="button" class="btn small" data-action="reject-proposal" data-key="${esc(b.key)}">Reject</button>
+    </span>
+    <form class="pending-edit hidden" data-edit-for="${esc(b.key)}">
+      <input name="title" type="text" value="${esc(card.title)}" />
+      <input name="start" type="date" value="${esc(b.start || '')}" />
+      <input name="time" type="time" value="${esc(b.time || '')}" />
+    </form>
+  </li>`).join('');
+  return `<li class="pending-card">
+    <details>
+      <summary>
+        <span class="pending-title">${esc(card.title)}</span>
+        <span class="pending-meta">${esc(card.due || 'no due date')} · ${card.totalMinutes} min · ${card.count} block${card.count === 1 ? '' : 's'}${late ? ' · after deadline' : ''}</span>
+      </summary>
+      <ul class="pending-parts">${parts}</ul>
+    </details>
+    <button type="button" class="btn small primary" data-action="approve-all" data-task="${esc(card.taskId || '')}">Approve all</button>
+  </li>`;
 }
 
 function pendingRow(p) {
@@ -334,10 +427,84 @@ function decideProposal(key, action) {
 
 function applyTeam(state) {
   teamState = state || null;
+  if (teamState && typeof Inbox !== 'undefined' && Inbox.applyTaskUpdates(store, teamState.outputs)) save();
   renderMorningBrief();
   renderTeam();
+  renderTaskInbox();
+  renderEmails();
   renderTodos();
   updateGeminiControls();
+  refreshEstimateCard();
+}
+
+// ----- New tasks inbox: Analyst proposals waiting to join the one task list -----
+function renderTaskInbox() {
+  const list = document.getElementById('team-tasks');
+  if (!list) return;
+  const pending = (teamState && typeof Inbox !== 'undefined')
+    ? Inbox.pendingTaskProposals(teamState.outputs, store)
+    : [];
+  if (!pending.length) {
+    list.innerHTML = '<li class="empty-note">No new task proposals.</li>';
+    return;
+  }
+  const mock = teamState.globalMode === 'mock' ? '<li class="mock-note">mock</li>' : '';
+  list.innerHTML = mock + '<li class="pending-card task-all"><button type="button" class="btn small primary" data-action="approve-all-tasks">Approve all</button></li>' +
+    pending.map(taskProposalRow).join('');
+}
+
+function taskProposalRow(p) {
+  const effort = p.effort_estimate_minutes ? ` · ~${p.effort_estimate_minutes} min` : '';
+  return `<li class="pending-card" data-task-id="${esc(p.id)}">
+    <div class="pending-title">${esc(p.title)}</div>
+    <div class="pending-meta">${esc(p.due || 'no due date')} · priority ${esc(p.priority_rank ?? '-')}${effort} · ${esc(p.source)}</div>
+    ${p.summary ? `<div class="pending-reason">${esc(p.summary)}</div>` : ''}
+    <form class="pending-edit hidden" data-task-edit="${esc(p.id)}">
+      <input name="title" type="text" value="${esc(p.title)}" />
+      <input name="due" type="date" value="${esc(p.due || '')}" />
+    </form>
+    <div class="pending-actions">
+      <button type="button" class="btn small primary" data-action="approve-task" data-task="${esc(p.id)}">Approve</button>
+      <button type="button" class="btn small" data-action="edit-task" data-task="${esc(p.id)}">Edit</button>
+      <button type="button" class="btn small" data-action="reject-task" data-task="${esc(p.id)}">Reject</button>
+    </div>
+  </li>`;
+}
+
+function taskProposalById(id) {
+  if (!teamState || typeof Inbox === 'undefined') return null;
+  return Inbox.listTaskProposals(teamState.outputs).find((p) => String(p.id) === String(id)) || null;
+}
+
+function taskEdits(id) {
+  const form = document.querySelector('.pending-edit[data-task-edit="' + String(id).replace(/"/g, '') + '"]');
+  if (!form || form.classList.contains('hidden')) return null;
+  return { title: form.querySelector('[name=title]').value.trim(), due: form.querySelector('[name=due]').value };
+}
+
+function decideTask(id, action) {
+  const p = taskProposalById(id);
+  if (!p || typeof Inbox === 'undefined') return;
+  if (action === 'reject') Inbox.rejectTask(store, p);
+  else Inbox.approveTask(store, p, taskEdits(id));
+  save();
+  renderTodos();
+  renderTaskInbox();
+  setStatus(action === 'reject' ? 'Task rejected' : 'Task approved');
+}
+
+async function refreshEstimateCard() {
+  const el = document.getElementById('estimate-card');
+  if (!el || typeof Reality === 'undefined' || !window.widgetAPI.timeLogGet) return;
+  try {
+    const log = await window.widgetAPI.timeLogGet();
+    const tasks = teamState && teamState.outputs && teamState.outputs.ANALYST && teamState.outputs.ANALYST.tasks;
+    const label = Reality.offLabel(Reality.estimateHistory(tasks || [], log));
+    el.classList.toggle('hidden', !label);
+    el.textContent = label || '';
+  } catch (err) {
+    console.warn('[time] ' + err.message);
+  }
 }
 
 function todoRow(t, dueIso) {
@@ -373,8 +540,14 @@ function renderTodos() {
   const today = todayStr();
   const windowEnd = toISODate(addDays(new Date(), windowDays));
 
-  const all = activeTodos();
-  const notDone = all.filter((t) => !t.done);
+  const feedView = (typeof Feed !== 'undefined')
+    ? Feed.taskList(activeTodos(), { globalMode: teamState && teamState.globalMode, analystOffline: analystOffline() })
+    : { tasks: activeTodos(), banner: null };
+  const all = feedView.tasks;
+  const ranks = teamState && teamState.outputs && teamState.outputs.ANALYST && teamState.outputs.ANALYST.tasks;
+  const notDone = (typeof Feed !== 'undefined')
+    ? Feed.orderTodos(all.filter((t) => !t.done), ranks && ranks.length ? ranks : null)
+    : all.filter((t) => !t.done);
   const withDue = notDone.map((t) => ({ t, due: localDateOf(t.due) })).filter((x) => x.due);
   const byDueTime = (a, b) => (`${a.due} ${a.t.time || ''}`).localeCompare(`${b.due} ${b.t.time || ''}`);
 
@@ -391,11 +564,12 @@ function renderTodos() {
     `today=${dueToday.length} upcoming=${inWindow.length} later=${later.length} ` +
     `done=${all.filter((t) => t.done).length}`);
 
+  const banner = taskListBanner();
   const todayItems = [...overdue, ...dueToday];
   if (!todayItems.length) {
-    setHTML('today-list', '<li class="empty-note">Nothing due today.</li>');
+    setHTML('today-list', banner + '<li class="empty-note">Nothing due today.</li>');
   } else {
-    const parts = [];
+    const parts = [banner];
     if (overdue.length) parts.push('<li class="list-note">Overdue</li>', ...overdue.map((x) => todoRow(x.t, x.due)));
     if (dueToday.length) parts.push(...dueToday.map((x) => todoRow(x.t, x.due)));
     setHTML('today-list', parts.join(''));
@@ -412,10 +586,16 @@ function renderTodos() {
       : ''));
   }
 
-  const allSorted = [...all].sort((a, b) =>
-    (a.done - b.done) || (`${localDateOf(a.due)} ${a.time || ''}`).localeCompare(`${localDateOf(b.due)} ${b.time || ''}`));
+  const doneItems = all.filter((t) => t.done);
+  const openOrdered = (typeof Feed !== 'undefined')
+    ? Feed.orderTodos(all.filter((t) => !t.done), ranks && ranks.length ? ranks : null)
+    : all.filter((t) => !t.done);
+  const allSorted = ranks && ranks.length
+    ? [...openOrdered, ...doneItems]
+    : [...all].sort((a, b) =>
+      (a.done - b.done) || (`${localDateOf(a.due)} ${a.time || ''}`).localeCompare(`${localDateOf(b.due)} ${b.time || ''}`));
   setHTML('all-list',
-    allSorted.length ? allSorted.map((t) => todoRow(t, localDateOf(t.due))).join('') : '<li class="empty-note">No tasks yet. Add one below.</li>');
+    banner + (allSorted.length ? allSorted.map((t) => todoRow(t, localDateOf(t.due))).join('') : '<li class="empty-note">No tasks yet. Add one below.</li>'));
 
   // Keep the Focus view's "Focus on" picker in step with the shared tasks.
   if (typeof focusRefreshPicker === 'function') focusRefreshPicker();
@@ -452,14 +632,34 @@ function emailRow(e) {
     </li>`;
 }
 
+function emailView() {
+  if (typeof Feed === 'undefined') return { kind: 'local', emails: store.emails || [], banner: null };
+  const mail = teamState && teamState.nodes && teamState.nodes.MAIL;
+  return Feed.emailList({
+    globalMode: (teamState && teamState.globalMode) || 'live',
+    mail: mail || { status: 'idle', mode: 'live' },
+    mailOutput: teamState && teamState.outputs && teamState.outputs.MAIL,
+    localEmails: store.emails || [],
+    localSyncEnabled: !!(store.settings.gmail && store.settings.gmail.useLocalList)
+  });
+}
+
 function renderEmails() {
-  const list = store.emails || [];
-  const compactHTML = list.length
+  const view = emailView();
+  const list = view.emails || [];
+  const banner = view.banner === 'Mail Scanner offline'
+    ? '<li class="empty-note mail-offline">Mail Scanner offline</li>'
+    : view.banner === 'mock'
+      ? '<li class="mock-note">mock</li>'
+      : view.banner
+        ? `<li class="empty-note">${esc(view.banner)}</li>`
+        : '';
+  const compactHTML = banner + (list.length
     ? list.slice(0, 3).map(emailRow).join('')
-    : '<li class="empty-note">No matching emails.</li>';
-  const fullHTML = list.length
+    : (banner ? '' : '<li class="empty-note">No matching emails.</li>'));
+  const fullHTML = banner + (list.length
     ? list.map(emailRow).join('')
-    : '<li class="empty-note">No matching emails. Connect Gmail in Settings.</li>';
+    : (banner ? '' : '<li class="empty-note">No matching emails. Connect Gmail in Settings.</li>'));
 
   setHTML('email-list-compact', compactHTML);
   setHTML('email-list', fullHTML);
@@ -680,7 +880,10 @@ function deleteLink(id) {
 //   - shows the score/reason and the "Filtered out" list
 let mlState = { modelReady: false, trainedOn: 0, accuracy: null, heldOut: 0, training: false, coldStart: 40 };
 
-function mlEnabled() { return !!(store.settings.ml && store.settings.ml.enabled); }
+function mlEnabled() {
+  if (teamState && teamState.globalMode === 'live') return false;
+  return !!(store.settings.ml && store.settings.ml.enabled);
+}
 
 // The text a Gmail item is judged on: subject + the section text it came from.
 // Older items have no mlText yet, so fall back to the readable fields.
@@ -1601,10 +1804,25 @@ function cancelCleanup() {
 // 7. Canvas sync + merge (dedupe by uid)
 // ---------------------------------------------------------------------------
 
-// Merge synced Canvas items into events + todos without creating duplicates.
-// The actual work is done by Sync.mergeItems (see sync.js).
+// Merge synced Canvas items into calendar events. Canvas items are agent input,
+// so they do NOT become to-dos unless the hidden restore switch is on.
 function mergeCanvas(items) {
-  Sync.mergeItems(store, 'canvas', items);
+  const restore = !!(store.settings.dev && store.settings.dev.restoreCanvasTodos);
+  Sync.mergeItems(store, 'canvas', items, { makeTodo: restore });
+  if (!restore) archiveCanvasInputs(items);
+}
+
+// The Agent Analyst reads this pool. Kept separate from store.todos.
+function archiveCanvasInputs(items) {
+  if (!store.archived) store.archived = {};
+  const pool = store.archived.legacy_canvas || (store.archived.legacy_canvas = []);
+  for (const it of items || []) {
+    const key = 'canvas:' + it.uid;
+    const hit = pool.find((x) => x && (x.dedupeKey === key || x.id === key));
+    const next = { title: it.title, due: it.start, time: it.time, course: it.course, description: it.description };
+    if (hit) Object.assign(hit, next);
+    else pool.push({ id: key, dedupeKey: key, done: false, source: 'canvas', status: 'active', ...next });
+  }
 }
 
 // Short slug used to build stable dedupe keys.
@@ -1695,6 +1913,15 @@ async function syncCanvas() {
 }
 
 async function syncGmail() {
+  if (teamState && teamState.globalMode === 'live') {
+    renderEmails();
+    renderCalendar();
+    return;
+  }
+  if (!(store.settings.gmail && store.settings.gmail.useLocalList)) {
+    renderEmails();
+    return;
+  }
   const filters = store.settings.gmail || {};
   const lcfg = store.settings.llm || {};
   const res = await window.widgetAPI.gmailFetch(filters, store.settings.processedMessageIds || null, {
@@ -1794,6 +2021,8 @@ function setView(mode) {
   if (teamView) teamView.classList.toggle('hidden', mode !== 'team');
   const brief = document.getElementById('morning-brief');
   if (brief) brief.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
+  const estimateCard = document.getElementById('estimate-card');
+  if (estimateCard) estimateCard.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
   const teamBtn = document.getElementById('teamBtn');
   if (teamBtn) teamBtn.classList.toggle('active', mode === 'team');
 
@@ -1918,6 +2147,8 @@ async function openSettings() {
   fLabel.value = gf.label || '';
   fMax.value = gf.maxResults || 15;
   fDays.value = gf.days || 30;
+  const localBox = document.getElementById('gmail-local');
+  if (localBox) localBox.checked = !!gf.useLocalList;
 
   const dst = await window.widgetAPI.discordStatus();
   discordConnected = dst.connected;
@@ -1999,7 +2230,8 @@ function saveGmailFilters() {
     senders: fSenders.value,
     label: fLabel.value,
     maxResults: Math.max(1, Math.min(500, Number(fMax.value) || 200)),
-    days: Math.max(30, Number(fDays.value) || 30)
+    days: Math.max(30, Number(fDays.value) || 30),
+    useLocalList: !!(document.getElementById('gmail-local') && document.getElementById('gmail-local').checked)
   };
   fMax.value = store.settings.gmail.maxResults;
   fDays.value = store.settings.gmail.days;
@@ -2181,6 +2413,13 @@ function wireSettings() {
     save(); renderEmails(); updateGmailUI();
   });
 
+  const localBox = document.getElementById('gmail-local');
+  if (localBox) localBox.addEventListener('change', async () => {
+    saveGmailFilters();
+    renderEmails();
+    renderCalendar();
+    if (gmailConnected) await syncGmail();
+  });
   [fKeywords, fDomains, fNames, fTrusted, fSenders, fLabel, fMax, fDays].forEach((el) => {
     el.addEventListener('change', async () => {
       saveGmailFilters();
@@ -2271,6 +2510,21 @@ function wireUI() {
     if (!window.widgetAPI.teamRun) return;
     window.widgetAPI.teamRun().then(applyTeam).catch((err) => console.warn('[team] ' + err.message));
   });
+  const newTaskList = document.getElementById('team-tasks');
+  if (newTaskList) newTaskList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    if (btn.dataset.action === 'approve-all-tasks') {
+      newTaskList.querySelectorAll('[data-action="approve-task"]').forEach((b) => decideTask(b.dataset.task, 'approve'));
+      return;
+    }
+    if (btn.dataset.action === 'edit-task') {
+      const form = btn.closest('.pending-card').querySelector('.pending-edit');
+      if (form) form.classList.toggle('hidden');
+      return;
+    }
+    decideTask(btn.dataset.task, btn.dataset.action === 'reject-task' ? 'reject' : 'approve');
+  });
   const pendingList = document.getElementById('team-pending');
   if (pendingList) pendingList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
@@ -2279,6 +2533,12 @@ function wireUI() {
     if (btn.dataset.action === 'edit-proposal') {
       const form = btn.closest('.pending-item').querySelector('.pending-edit');
       if (form) form.classList.toggle('hidden');
+      return;
+    }
+    if (btn.dataset.action === 'approve-all') {
+      const card = btn.closest('.pending-card');
+      if (!card) return;
+      card.querySelectorAll('[data-action="approve-proposal"]').forEach((part) => decideProposal(part.dataset.key, 'approve'));
       return;
     }
     if (btn.dataset.action === 'approve-proposal' || btn.dataset.action === 'reject-proposal') {
@@ -2365,6 +2625,8 @@ async function init() {
     try { applyTeam(await window.widgetAPI.teamState()); }
     catch (err) { console.warn('[team] ' + err.message); }
   }
+  renderTaskInbox();
+  refreshEstimateCard();
 
   // Canvas: if connected, pull fresh data in the background.
   const st = await window.widgetAPI.canvasStatus();

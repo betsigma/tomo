@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const T = require('./teamInputs');
+const Inbox = require('./inbox');
 const { excludedKeyword } = require('./gmail');
 
 const ORDER = ['MAIL', 'ANALYST', 'PLANNER', 'DIGEST'];
@@ -69,6 +70,7 @@ function createOrchestrator(opts) {
         mode: modes[r].mode,               // 'live' | 'mock' (key missing or CREAO_MODE=mock)
         runsLastHour: modes[r].runsLastHour
       }])),
+      globalMode: cs.globalMode,
       maxRunsPerHour: cs.maxRunsPerHour,
       outputs: state.outputs,
       lastRun: state.lastRun,
@@ -155,7 +157,7 @@ function createOrchestrator(opts) {
         ranked_tasks: ranked.slice(0, 12),
         calendar,
         free_windows: windows,
-        estimate_history: getEstimateHistory()
+        estimate_history: getEstimateHistory(ranked)
       };
       const planner = await step('PLANNER', pIn, force);
       if (!planner.ok || !planner.output) halt('PLANNER', planner, 'Planner failed');
@@ -163,7 +165,12 @@ function createOrchestrator(opts) {
       const checked = planner.source === 'mock'
         ? { kept: planner.output.proposals, dropped: [] }
         : T.checkProposals(planner.output.proposals, calendar, windows);
-      state.outputs.PLANNER = { proposals: checked.kept, adjustment_note: planner.output.adjustment_note, dropped: checked.dropped };
+      const previous = (state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [];
+      state.outputs.PLANNER = {
+        proposals: Inbox.replacePending(previous, checked.kept),
+        adjustment_note: planner.output.adjustment_note,
+        dropped: checked.dropped
+      };
       finish('PLANNER', planner, `${checked.kept.length} study block${checked.kept.length === 1 ? '' : 's'} proposed` +
         (checked.dropped.length ? ` (${checked.dropped.length} dropped by rule check)` : ''));
 
@@ -198,8 +205,22 @@ function createOrchestrator(opts) {
     state.nextRunAt = new Date(at).toISOString();
     timer = setTimeout(() => runTeam('schedule'), at - Date.now());
   }
+  function seedMocks() {
+    const cs = client.status();
+    if (cs.globalMode !== 'mock' || state.outputs.MAIL || typeof client.loadMock !== 'function') return;
+    try {
+      state.outputs.MAIL = client.loadMock('MAIL');
+      state.outputs.ANALYST = client.loadMock('ANALYST');
+      state.outputs.PLANNER = client.loadMock('PLANNER');
+      state.outputs.DIGEST = client.loadMock('DIGEST');
+      for (const r of ORDER) {
+        if (state.nodes[r].status === 'idle') state.nodes[r].status = 'mock';
+      }
+    } catch { /* mock files are optional for tests */ }
+  }
   function start(intervalHours) {
     if (intervalHours) state.intervalHours = Math.max(1, Math.min(24, Number(intervalHours) || 3));
+    seedMocks();
     scheduleNext();
     emit(publicState());
   }

@@ -48,6 +48,7 @@
     <main class="body">
 
       <div id="morning-brief" class="morning-brief hidden"></div>
+      <div id="estimate-card" class="estimate-card hidden"></div>
 
       <!-- ---------- COMPACT VIEW: today's tasks + next 3 deadlines ---------- -->
       <section id="view-compact" class="view">
@@ -125,8 +126,12 @@
         <p id="team-schedule" class="hint">Not run yet</p>
         <p id="team-loading" class="team-loading hidden">The team is working&hellip;</p>
         <div id="team-chart" class="team-chart"></div>
-        <h3 class="section-title">Pending</h3>
-        <p class="hint">Proposals wait here. They are not on the calendar yet.</p>
+        <h3 class="section-title">New tasks</h3>
+        <p class="hint">The Analyst proposes these. Approve to add them to your one task list.</p>
+        <ul id="team-tasks" class="pending-list"></ul>
+
+        <h3 class="section-title">Pending study blocks</h3>
+        <p class="hint">Blocks wait here. They are not on the calendar yet.</p>
         <ul id="team-pending" class="pending-list"></ul>
       </section>
 
@@ -326,9 +331,11 @@
             <input id="f-max" type="number" min="1" max="500" /></label>
           <label class="field-inline"><span>Look back (days, min 30)</span>
             <input id="f-days" type="number" min="30" max="3650" /></label>
+          <label class="field-inline"><span><input id="gmail-local" type="checkbox" /> Use the widget's own Gmail list</span></label>
+          <p id="gmail-local-note" class="hint hidden">Live mode shows the Mail Scanner only. This restore switch works when the app is in mock mode.</p>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" id="llm-section">
           <h4>AI sorting (Gemini)</h4>
           <label class="field-inline"><span><input id="llm-enabled" type="checkbox" /> Use AI sorting</span></label>
           <label class="field"><span>Model</span>
@@ -348,8 +355,9 @@
           <pre id="llm-test-output" class="llm-output hidden"></pre>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" id="ml-section">
           <h4>Learned relevance filter (on-device)</h4>
+          <p id="ml-live-note" class="hint hidden">Live mode does not use this filter. The important list comes only from the Mail Scanner.</p>
           <p class="hint">
             Learns what matters to you from the Gmail items you accept, mark done
             or keep, and the ones you dismiss or block. It runs locally with a
@@ -597,6 +605,8 @@
   <!-- Shared pure helpers (merge/dedupe) -->
   <script src="sync.js"></script>
   <script src="../inbox.js"></script>
+  <script src="../reality.js"></script>
+  <script src="../agentFeed.js"></script>
   <!-- Shared pure helpers (recurrence) -->
   <script src="recur.js"></script>
   <script src="renderer.js"></script>

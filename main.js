@@ -25,6 +25,7 @@ const llm = require('./llm');
 const { RelevanceModel } = require('./ml');
 const { createClient, geminiAllowed } = require('./creaoClient');
 const { createOrchestrator } = require('./orchestrator');
+const Reality = require('./reality');
 
 let mainWindow = null;
 
@@ -35,6 +36,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');       // app data (not secret)
 const SECRETS_FILE = path.join(DATA_DIR, 'secrets.json');   // encrypted secrets
 const EXCLUDED_LOG = path.join(DATA_DIR, 'excluded-emails.log'); // review list for false positives
+const TIME_LOG = path.join(DATA_DIR, 'time-log.json');           // actual Focus minutes per task
 
 // The learned relevance filter. Everything it needs lives in data/ (ml-model.json,
 // ml-embeddings.json and the cached embedding model under data/models). It is
@@ -434,12 +436,12 @@ ipcMain.handle('gmail-fetch', async (_e, filters = {}, cache = null, llmReq = nu
       model: (llmReq && llmReq.model) || llm.DEFAULT_MODEL,
       apiKey: useGemini ? apiKey : null,
       cache: (llmReq && llmReq.cache) || {},
-      callModel: llm.callModel
+      callModel: (args) => llm.callModel({ ...args, creaoMode: mailMode })
     };
 
     // The learned filter runs in THIS process. The renderer only says whether it
     // is on; the examples and the model itself never leave the main process.
-    const ml = (mlReq && mlReq.enabled)
+    const ml = (mailMode !== 'live' && mlReq && mlReq.enabled)
       ? { enabled: true, score: (texts) => mlModel.scoreTexts(texts) }
       : null;
 
@@ -456,6 +458,26 @@ ipcMain.handle('gmail-fetch', async (_e, filters = {}, cache = null, llmReq = nu
     return { ok: false, error: String(err.message || err) };
   }
 });
+
+// Actual Focus minutes. Separate from store.json so a main-process write
+// cannot be overwritten by the renderer's next save.
+function loadTimeLog() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(TIME_LOG, 'utf8'));
+    return { sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [] };
+  } catch { return { sessions: [] }; }
+}
+function saveTimeLog(log) {
+  ensureDataDir();
+  writeJsonAtomic(TIME_LOG, { sessions: log.sessions || [] });
+}
+ipcMain.handle('time-log-add', (_e, entry) => {
+  const log = loadTimeLog();
+  Reality.addSession(log, entry || {});
+  saveTimeLog(log);
+  return { ok: true, count: log.sessions.length };
+});
+ipcMain.handle('time-log-get', () => loadTimeLog());
 
 // Append each keyword-excluded email (subject + sender only, never the body)
 // to data/excluded-emails.log, one JSON line each, so false positives can be
@@ -704,6 +726,7 @@ const team = createOrchestrator({
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('team-update', state);
   },
   onExcluded: logExcluded,
+  getEstimateHistory: (tasks) => Reality.estimateHistory(tasks, loadTimeLog()),
   log: (m) => console.log(m)
 });
 ipcMain.handle('team-state', () => team.getState());

@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   // Agent team. State only — no keys, no App IDs.
   teamState: () => ipcRenderer.invoke('team-state'),
   teamRun: () => ipcRenderer.invoke('team-run'),
+  timeLogAdd: (entry) => ipcRenderer.invoke('time-log-add', entry),
+  timeLogGet: () => ipcRenderer.invoke('time-log-get'),
   onTeamUpdate: (fn) => {
     const handler = (_e, state) => fn(state);
     ipcRenderer.on('team-update', handler);

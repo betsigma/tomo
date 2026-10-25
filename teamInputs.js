@@ -39,6 +39,44 @@ function usefulDescription(text) {
 // (default 14), soonest first, at most `max` (default 30). Done, dismissed,
 // suggested and filtered tasks are left out. A description is sent only when
 // the task is new or its content changed (cache keyed by task id + hash).
+function courseCode(task) {
+  const text = `${task.course || ''} ${task.title || ''}`;
+  const skip = new Set(['WEEK', 'LAB', 'QUIZ', 'EXAM', 'UNIT', 'DAY', 'DUE', 'PART']);
+  const bracket = text.match(/\[[^\]]*?\b([A-Z]{2,5})\s+([A-Z]?\d{1,4}[A-Z]?)\b/i);
+  if (bracket && !skip.has(bracket[1].toUpperCase())) return (bracket[1] + ' ' + bracket[2]).toUpperCase();
+  const re = /\b([A-Z]{2,5})\s+([A-Z]?\d{1,4}[A-Z]?)\b/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    if (!skip.has(m[1].toUpperCase())) return (m[1] + ' ' + m[2]).toUpperCase();
+  }
+  return '';
+}
+
+function titlesOverlap(a, b) {
+  const x = String(a || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const y = String(b || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!x || !y || Math.min(x.length, y.length) < 8) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+// Same course code, same due date, and one title contains the other: keep the
+// longer title so the Analyst is not asked twice.
+function mergeDuplicateTasks(tasks) {
+  const kept = [];
+  const merged = [];
+  for (const t of tasks || []) {
+    const code = courseCode(t);
+    const due = String(t.due_date || '').slice(0, 10);
+    const hit = kept.find((k) => courseCode(k) === code && code && String(k.due_date || '').slice(0, 10) === due && titlesOverlap(k.title, t.title));
+    if (!hit) { kept.push(t); continue; }
+    const stay = t.title.length > hit.title.length ? t : hit;
+    const drop = stay === t ? hit : t;
+    if (stay !== hit) kept[kept.indexOf(hit)] = stay;
+    merged.push({ kept: stay.title, dropped: drop.title, course: code, due });
+  }
+  return { tasks: kept, merged };
+}
+
 function buildAnalystInput(store, analystCache, importantEmails, now = new Date(), opts = {}) {
   const horizonDays = opts.horizonDays == null ? 14 : opts.horizonDays;
   const overdueDays = opts.overdueDays == null ? 3 : opts.overdueDays;
@@ -48,7 +86,13 @@ function buildAnalystInput(store, analystCache, importantEmails, now = new Date(
   const to = localDate(addDays(now, horizonDays));
   const eventByKey = new Map((store.events || []).map((e) => [e.dedupeKey, e]));
 
-  const eligible = (store.todos || [])
+  // Canvas items are agent input, not the visible task list. They live in
+  // archived.legacy_canvas once migrated; before that, fall back to old todos.
+  const archived = store.archived && Array.isArray(store.archived.legacy_canvas) && store.archived.legacy_canvas.length
+    ? store.archived.legacy_canvas
+    : null;
+  const pool = archived || (store.todos || []).filter((t) => t && t.source === 'canvas');
+  const eligible = pool
     .filter((t) => t && !t.done && t.due && t.status !== 'dismissed' && t.status !== 'suggested' && t.status !== 'filtered')
     .map((t) => {
       const due = String(t.due).slice(0, 10);
@@ -63,7 +107,8 @@ function buildAnalystInput(store, analystCache, importantEmails, now = new Date(
     })
     .filter((t) => t.due_date.slice(0, 10) >= from && t.due_date.slice(0, 10) <= to)
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
-  const candidates = eligible.slice(0, max);
+  const folded = mergeDuplicateTasks(eligible);
+  const candidates = folded.tasks.slice(0, max);
 
   const hashes = {};
   const tasks = candidates.map((t) => {
@@ -83,7 +128,8 @@ function buildAnalystInput(store, analystCache, importantEmails, now = new Date(
     },
     hashes,
     sent: candidates.length,
-    eligible: eligible.length
+    eligible: folded.tasks.length,
+    merged: folded.merged
   };
 }
 
@@ -186,5 +232,5 @@ function checkProposals(proposals, calendar, windows) {
 
 module.exports = {
   localDate, localStamp, parseStamp, contentHash, usefulDescription,
-  buildAnalystInput, mergeAnalyst, buildCalendar, freeWindows, checkProposals
+  buildAnalystInput, mergeAnalyst, mergeDuplicateTasks, buildCalendar, freeWindows, checkProposals
 };

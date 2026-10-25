@@ -580,9 +580,9 @@ check('Analyst input keeps 3-day overdue and 14-day tasks, and drops the rest', 
   ] };
   const built = teamInputs.buildAnalystInput(store, {}, [], now);
   const ids = built.input.tasks.map((t) => t.id);
-  assert.deepStrictEqual(ids, ['overdue', 'soon', 'manual', 'far']);
-  assert.strictEqual(built.sent, 4);
-  assert.strictEqual(built.eligible, 4);
+  assert.deepStrictEqual(ids, ['overdue', 'soon', 'far']);
+  assert.strictEqual(built.sent, 3);
+  assert.strictEqual(built.eligible, 3);
 });
 
 check('Analyst input caps at 30 and reports sent of eligible', () => {
@@ -666,7 +666,76 @@ checkAsync('a full run records how many tasks were sent', async () => {
   assert.ok(String(state.nodes.ANALYST.handoff).includes('sent 1 of 1'));
 });
 
-console.log('\n13. Approval inbox: only an approval enters the calendar');
+console.log('\n13. Reality check: actual minutes versus the Analyst estimate');
+const Reality = require('./reality.js');
+
+check('a finished focus block records minutes and drops junk', () => {
+  const log = { sessions: [] };
+  Reality.addSession(log, { taskId: 'lab', minutes: 25, at: '2026-10-25T10:00:00.000Z' });
+  Reality.addSession(log, { taskId: 'lab', minutes: 25, at: '2026-10-25T11:00:00.000Z' });
+  Reality.addSession(log, { taskId: '', minutes: 25 });
+  Reality.addSession(log, { taskId: 'lab', minutes: 0 });
+  Reality.addSession(log, { taskId: 'lab', minutes: 500 });
+  assert.strictEqual(log.sessions.length, 2);
+  assert.strictEqual(log.sessions[0].minutes, 25);
+});
+
+check('estimate history pairs each estimate with the minutes actually spent', () => {
+  const tasks = [
+    { id: 'lab', effort_estimate_minutes: 40 },
+    { id: 'essay', effort_estimate_minutes: 60 },
+    { id: 'unread', effort_estimate_minutes: 30 }
+  ];
+  const log = { sessions: [
+    { taskId: 'lab', minutes: 25 },
+    { taskId: 'lab', minutes: 25 },
+    { taskId: 'essay', minutes: 30 }
+  ] };
+  assert.deepStrictEqual(Reality.estimateHistory(tasks, log), [
+    { task_id: 'lab', estimated_minutes: 40, actual_minutes: 50 },
+    { task_id: 'essay', estimated_minutes: 60, actual_minutes: 30 }
+  ]);
+});
+
+check('the card says how far estimates usually are', () => {
+  const history = [
+    { task_id: 'a', estimated_minutes: 100, actual_minutes: 120 },
+    { task_id: 'b', estimated_minutes: 50, actual_minutes: 40 }
+  ];
+  assert.strictEqual(Reality.offLabel(history), 'your estimates are usually 20% off');
+  assert.strictEqual(Reality.offLabel([]), null);
+});
+
+checkAsync('the Planner receives focus history built from the ranked tasks', async () => {
+  const dir = tmpData();
+  const seen = [];
+  const client = fakeTeamClient({
+    MAIL: { ok: true, source: 'live', output: { important_emails: [], events: [] } },
+    ANALYST: { ok: true, source: 'live', output: { tasks: [{ id: 'lab', effort_estimate_minutes: 40, priority_rank: 1 }], crunch_weeks: [] } },
+    PLANNER: { ok: true, source: 'mock', output: { proposals: [], adjustment_note: '' } },
+    DIGEST: { ok: true, source: 'mock', output: { morning_brief: 'Hi.', team_digest: ['a', 'b', 'c'] } }
+  });
+  const orig = client.run;
+  client.run = async (role, input, opts) => {
+    seen.push({ role, input });
+    return orig(role, input, opts);
+  };
+  const orch = createOrchestrator({
+    client, dataDir: dir,
+    loadStore: () => ({ events: [], settings: {}, todos: [openTodo('lab', '2026-10-24')] }),
+    emit: () => {}, log: () => {}, now: () => new Date(2026, 9, 24, 12, 0, 0),
+    getEstimateHistory: (tasks) => Reality.estimateHistory(tasks, { sessions: [{ taskId: 'lab', minutes: 50 }] })
+  });
+  try { await orch.runTeam('schedule'); }
+  finally { orch.stop(); }
+  const planner = seen.find((c) => c.role === 'PLANNER');
+  assert.ok(planner, 'planner did not run');
+  assert.deepStrictEqual(planner.input.estimate_history, [
+    { task_id: 'lab', estimated_minutes: 40, actual_minutes: 50 }
+  ]);
+});
+
+console.log('\n14. Approval inbox: only an approval enters the calendar');
 const Inbox = require('./inbox.js');
 
 function inboxOutputs() {
@@ -716,6 +785,225 @@ check('approve adds one calendar event; edit keeps the same key', () => {
   assert.strictEqual(store.events[0].start, '2026-10-25');
   assert.strictEqual(store.events[0].dedupeKey, proposal.key);
   assert.strictEqual(Inbox.pendingProposals(inboxOutputs(), store).some((p) => p.key === proposal.key), false);
+});
+
+console.log('\n15. Track 1: live email list comes only from the Mail Scanner');
+const Feed = require('./agentFeed.js');
+
+check('live mode ignores the local Gmail list', () => {
+  const view = Feed.emailList({
+    globalMode: 'live',
+    mail: { status: 'done', mode: 'live' },
+    mailOutput: { important_emails: [{ subject: 'Aid', sender: 'finaid@deanza.edu', summary: 'Upload it', link: 'https://example.edu' }], events: [] },
+    localEmails: [{ subject: 'Local newsletter', from: 'news@school.edu' }]
+  });
+  assert.deepStrictEqual(view.emails.map((e) => e.subject), ['Aid']);
+  assert.strictEqual(view.banner, null);
+});
+
+check('a missing or failed Mail Scanner does not fall back to local Gmail', () => {
+  const view = Feed.emailList({
+    globalMode: 'live',
+    mail: { status: 'error', mode: 'live' },
+    mailOutput: null,
+    localEmails: [{ subject: 'Local newsletter', from: 'news@school.edu' }]
+  });
+  assert.deepStrictEqual(view.emails, []);
+  assert.strictEqual(view.banner, 'Mail Scanner offline');
+});
+
+check('mock mode uses agent sample data and says mock', () => {
+  const view = Feed.emailList({
+    globalMode: 'mock',
+    mail: { status: 'mock', mode: 'mock' },
+    mailOutput: { important_emails: [{ subject: 'Demo aid', sender: 'a@b.edu', summary: 'Demo' }], events: [] },
+    localEmails: [{ subject: 'Local newsletter', from: 'news@school.edu' }],
+    localSyncEnabled: false
+  });
+  assert.deepStrictEqual(view.emails.map((e) => e.subject), ['Demo aid']);
+  assert.strictEqual(view.banner, 'mock');
+});
+
+check('the local Gmail list is used only when that restore setting is on and mode is not live', () => {
+  const local = [{ subject: 'Local newsletter', from: 'news@school.edu' }];
+  const restored = Feed.emailList({
+    globalMode: 'mock', mail: { status: 'mock', mode: 'mock' }, mailOutput: null,
+    localEmails: local, localSyncEnabled: true
+  });
+  assert.strictEqual(restored.kind, 'local');
+  assert.strictEqual(restored.emails[0].subject, 'Local newsletter');
+  const blocked = Feed.emailList({
+    globalMode: 'live', mail: { status: 'done', mode: 'live' },
+    mailOutput: { important_emails: [], events: [] },
+    localEmails: local, localSyncEnabled: true
+  });
+  assert.notStrictEqual(blocked.kind, 'local');
+});
+
+check('live mode hides email events that came from the local Gmail sync', () => {
+  const events = [
+    { id: '1', source: 'gmail', title: 'Parsed from Gmail' },
+    { id: '2', source: 'canvas', title: 'Quiz' },
+    { id: '3', source: 'agent', title: 'Approved block' }
+  ];
+  assert.deepStrictEqual(Feed.visibleEvents(events, 'live').map((e) => e.id), ['2', '3']);
+  assert.strictEqual(Feed.visibleEvents(events, 'mock').length, 3);
+});
+
+check('task order uses the Analyst only when agent ranks exist', () => {
+  const todos = [{ id: 'b', title: 'B' }, { id: 'a', title: 'A' }, { id: 'c', title: 'C' }];
+  assert.deepStrictEqual(Feed.orderTodos(todos, null).map((t) => t.id), ['b', 'a', 'c']);
+  assert.deepStrictEqual(
+    Feed.orderTodos(todos, [{ id: 'a', priority_rank: 1 }, { id: 'b', priority_rank: 2 }]).map((t) => t.id),
+    ['a', 'b', 'c']
+  );
+});
+
+checkAsync('CREAO_MODE=live never requests Google', async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, text: async () => '', json: async () => ({}) };
+  };
+  let threw = false;
+  try {
+    await llm.callModel({
+      prompt: 'Please rank this private email body',
+      apiKey: 'gemini-secret',
+      fetchImpl,
+      creaoMode: 'live'
+    });
+  } catch { threw = true; }
+  assert.deepStrictEqual(urls, []);
+  assert.strictEqual(threw, true);
+});
+
+console.log('\n16. Pending cards: one task, not one block');
+const T = require('./teamInputs.js');
+
+check('duplicate Canvas titles with the same course and due date merge', () => {
+  const tasks = [
+    { id: 'short', title: 'Midterm [F26 CIS D022A 06Z Online]', due_date: '2026-11-02', course: '', description: null },
+    { id: 'long', title: 'Week 5 Assignments - Midterm [F26 CIS D022A 06Z Online]', due_date: '2026-11-02', course: '', description: 'write the midterm' },
+    { id: 'other', title: 'Lab 3 [F26 PHYS 4A 01Y]', due_date: '2026-11-02', course: '', description: null }
+  ];
+  const result = T.mergeDuplicateTasks(tasks);
+  assert.deepStrictEqual(result.tasks.map((t) => t.id), ['long', 'other']);
+  assert.strictEqual(result.merged.length, 1);
+  assert.strictEqual(result.merged[0].kept, 'Week 5 Assignments - Midterm [F26 CIS D022A 06Z Online]');
+  assert.strictEqual(result.merged[0].dropped, 'Midterm [F26 CIS D022A 06Z Online]');
+});
+
+check('proposals group into one card and flag blocks after the due date', () => {
+  const proposals = [
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T09:00', end: '2026-10-24T09:45', reason: 'first' },
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T09:00', end: '2026-10-24T09:45', reason: 'dup' },
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T10:00', end: '2026-10-24T10:45', reason: 'second' },
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-26T09:00', end: '2026-10-26T09:45', reason: 'late' },
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-27T09:00', end: '2026-10-27T09:45', reason: 'later' }
+  ];
+  const cards = Inbox.groupProposals(proposals, { lab: '2026-10-26' });
+  assert.strictEqual(cards.length, 1);
+  assert.strictEqual(cards[0].count, 4);
+  assert.strictEqual(cards[0].totalMinutes, 180);
+  assert.strictEqual(cards[0].blocks[0].label, 'Part 1/4 · 09:00-09:45 (45 min)');
+  assert.strictEqual(cards[0].blocks[2].afterDeadline, false);
+  assert.strictEqual(cards[0].blocks[3].afterDeadline, true);
+});
+
+check('a new team run replaces older pending blocks for the same task', () => {
+  const previous = [
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T09:00', end: '2026-10-24T09:45' },
+    { task_id: 'essay', title: 'Essay', start: '2026-10-25T11:00', end: '2026-10-25T11:40' }
+  ];
+  const next = [
+    { task_id: 'lab', title: 'Lab 5', start: '2026-10-24T13:00', end: '2026-10-24T13:40' }
+  ];
+  const replaced = Inbox.replacePending(previous, next);
+  assert.deepStrictEqual(replaced.map((p) => p.task_id + p.start), [
+    'essay2026-10-25T11:00',
+    'lab2026-10-24T13:00'
+  ]);
+});
+
+check('the morning brief is split into bullets', () => {
+  const bullets = Inbox.briefBullets('Lab is due Friday. Start the essay tonight. Ask if you get stuck.');
+  assert.deepStrictEqual(bullets, [
+    'Lab is due Friday.',
+    'Start the essay tonight.',
+    'Ask if you get stuck.'
+  ]);
+});
+
+console.log('\n17. One task list: approved agent tasks + manual tasks');
+const visibleTasks = (todos, opts) => Feed.taskList(todos, opts);
+
+check('live offline shows manual tasks only', () => {
+  const todos = [
+    { id: 'm1', title: 'Manual', source: 'manual', done: false },
+    { id: 'a1', title: 'Agent', source: 'agent', done: false }
+  ];
+  const view = Feed.taskList(todos, { globalMode: 'live', analystOffline: true });
+  assert.deepStrictEqual(view.tasks.map((t) => t.id), ['m1']);
+  assert.strictEqual(view.banner, 'Task Analyst offline');
+});
+
+check('live online shows approved and manual tasks', () => {
+  const todos = [
+    { id: 'm1', title: 'Manual', source: 'manual', done: false },
+    { id: 'a1', title: 'Agent', source: 'agent', done: false }
+  ];
+  const view = Feed.taskList(todos, { globalMode: 'live', analystOffline: false });
+  assert.deepStrictEqual(view.tasks.map((t) => t.id), ['m1', 'a1']);
+  assert.strictEqual(view.banner, null);
+});
+
+check('the Analyst pool comes from archived Canvas inputs, not the task list', () => {
+  const store = {
+    todos: [{ id: 'm1', title: 'Manual', source: 'manual', due: '2026-10-24', done: false }],
+    archived: { legacy_canvas: [
+      { id: 'c1', title: 'Lab 5', due: '2026-10-24', course: 'PHYS 4A', dedupeKey: 'canvas:c1' }
+    ] },
+    events: []
+  };
+  const built = T.buildAnalystInput(store, {}, [], new Date(2026, 9, 24, 12));
+  assert.deepStrictEqual(built.input.tasks.map((t) => t.id), ['c1']);
+});
+
+check('approving the same Analyst task twice keeps one task and updates it', () => {
+  const store = { events: [], todos: [] };
+  const proposal = { id: 'c1', title: 'Lab 5', due: '2026-10-24', priority_rank: 2, summary: 'Write it', effort_estimate_minutes: 40, source: 'canvas' };
+  Inbox.approveTask(store, proposal, null, () => 't1');
+  Inbox.approveTask(store, proposal, { title: 'Lab 5 (edited)' }, () => 't2');
+  assert.strictEqual(store.todos.length, 1);
+  assert.strictEqual(store.todos[0].id, 'c1');
+  assert.strictEqual(store.todos[0].source, 'agent');
+  assert.strictEqual(store.todos[0].title, 'Lab 5 (edited)');
+});
+
+check('a rerun updates summary and priority on the approved task', () => {
+  const store = { events: [], todos: [{ id: 'c1', source: 'agent', agentTaskId: 'c1', summary: 'old', priority_rank: 5 }] };
+  Inbox.applyTaskUpdates(store, { ANALYST: { tasks: [{ id: 'c1', summary: 'new', priority_rank: 1, effort_estimate_minutes: 50 }] } });
+  assert.strictEqual(store.todos[0].summary, 'new');
+  assert.strictEqual(store.todos[0].priority_rank, 1);
+});
+
+check('rejected tasks are remembered and not proposed again', () => {
+  const store = { events: [], todos: [], agentRejects: [] };
+  const proposal = { id: 'c2', title: 'Essay', due: '2026-10-26' };
+  Inbox.rejectTask(store, proposal, () => 'x');
+  assert.deepStrictEqual(store.agentRejects, ['c2']);
+  const pending = Inbox.pendingTaskProposals({ ANALYST: { tasks: [proposal] } }, store);
+  assert.strictEqual(pending.length, 0);
+});
+
+check('the task inbox shows only unapproved Analyst tasks', () => {
+  const store = { events: [], todos: [{ id: 'c1', source: 'agent', agentTaskId: 'c1' }], agentRejects: [] };
+  const pending = Inbox.pendingTaskProposals({ ANALYST: { tasks: [
+    { id: 'c1', title: 'Done already' },
+    { id: 'c2', title: 'New one' }
+  ] } }, store);
+  assert.deepStrictEqual(pending.map((p) => p.id), ['c2']);
 });
 
 // Run the async checks, then print the summary.

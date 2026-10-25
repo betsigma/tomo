@@ -35,6 +35,7 @@
   let cfg = readTimerSettings();
   let phase = 'work';                 // 'work' | 'break'
   let totalSeconds = cfg.work * 60;
+  let workBlockMinutes = cfg.work;    // length of the work block that is running
   let intervalId = null;
   let focusTaskId = null;             // picked in the "Focus on" dropdown (null = auto)
 
@@ -120,10 +121,16 @@
         new Notification("Time's up! \u{1F345}", { body: 'Work session done \u2014 take a break.' });
       }
       const task = pickCreditTask();
+      const minutes = workBlockMinutes;
       if (task) {
         task.pomodoros = (Number(task.pomodoros) || 0) + 1;
         save();
         renderTodos();               // repaints the main task list with the new count
+        if (window.widgetAPI && window.widgetAPI.timeLogAdd) {
+          window.widgetAPI.timeLogAdd({ taskId: task.id, minutes }).then(() => {
+            if (typeof refreshEstimateCard === 'function') refreshEstimateCard();
+          }).catch(() => {});
+        }
       }
       if (t.sound !== false) playChime();
       phase = 'break';
@@ -132,6 +139,7 @@
       phase = 'work';
     }
 
+    if (phase === 'work') workBlockMinutes = cfg.work;
     totalSeconds = phaseSeconds();
     updateDisplay();
     startTimer();                    // keep the work/break cycle going
@@ -147,6 +155,8 @@
     clearInterval(intervalId);
     intervalId = null;
     phase = 'work';
+    cfg = readTimerSettings();
+    workBlockMinutes = cfg.work;
     totalSeconds = cfg.work * 60;
     updateDisplay();
   }
@@ -475,6 +485,7 @@
   function focusInit() {
     cfg = readTimerSettings();
     phase = 'work';
+    workBlockMinutes = cfg.work;
     totalSeconds = cfg.work * 60;
     updateDisplay();
     renderFocusPicker();
@@ -482,7 +493,11 @@
   // Called when the widget's Settings change the work/break lengths.
   function focusApplySettings() {
     cfg = readTimerSettings();
-    if (intervalId === null) { totalSeconds = phaseSeconds(); updateDisplay(); }
+    if (intervalId === null) {
+      if (phase === 'work') workBlockMinutes = cfg.work;
+      totalSeconds = phaseSeconds();
+      updateDisplay();
+    }
   }
 
   window.focusInit = focusInit;
