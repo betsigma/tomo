@@ -147,6 +147,34 @@
     return { kept, dropped };
   }
 
+  // ----- Fun events (club meetings, socials) vs deadlines -----
+  // Events come only from agent output: Mail Scanner dates and Discord items the
+  // Analyst found. Planner blocks and email tasks are not events.
+  const EVENT_KINDS = { mail: 'from email', discord: 'from Discord' };
+  function eventSource(keyOrKind) {
+    const kind = String(keyOrKind || '').replace(/^agent:/, '').split(':')[0];
+    return EVENT_KINDS[kind] || null;
+  }
+  function isEventItem(ev) {
+    return !!(ev && String(ev.dedupeKey || '').indexOf('agent:') === 0 && eventSource(ev.dedupeKey));
+  }
+
+  function clock(t) {
+    const [h, m] = String(t || '').split(':').map(Number);
+    if (!Number.isFinite(h)) return '';
+    return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''}${h < 12 ? 'am' : 'pm'}`;
+  }
+  // "I'm in / Maybe / Can't make it" poll titled with name, day, time and place.
+  // Course codes are stripped; nothing else about the event is shared.
+  function rsvpRequest(ev) {
+    const [y, mo, d] = String(ev.start || '').split('-').map(Number);
+    const day = y ? new Date(y, mo - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    const time = ev.time ? clock(ev.time) + (ev.endTime && ev.endTime !== ev.time ? '-' + clock(ev.endTime) : '') : '';
+    const parts = [shortTitle(ev.title).replace(/\[[^\]]*\]/g, '').trim(), [day, time].filter(Boolean).join(' '), ev.location || '']
+      .filter(Boolean);
+    return { type: 'poll', question: 'Who\'s in? ' + parts.join(' · '), options: ['I\'m in', 'Maybe', 'Can\'t make it'] };
+  }
+
   // Once: take every approved study block off the calendar so the next run re-plans
   // under the rules above. A copy stays in store.archived.agentBlocksBackup.
   // Rejected blocks (dismissed) stay, so they are not suggested again.
@@ -460,7 +488,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, eventSource, rsvpRequest, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

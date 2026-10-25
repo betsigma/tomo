@@ -346,6 +346,8 @@ function renderTeam() {
   const pending = document.getElementById('team-pending');
   if (!pending) return;
   pending.innerHTML = pendingMarkup(state);
+  const events = document.getElementById('team-events');
+  if (events) events.innerHTML = eventsMarkup(state);
   updateInboxBadge();
   renderWeekReview();
 }
@@ -380,7 +382,7 @@ function pendingMarkup(state) {
   const raw = allowedBlocks(state)
     .filter((p) => !decided.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
   const cards = Inbox.groupProposals(raw, dueByTask());
-  const singles = Inbox.pendingProposals(state.outputs, store).filter((p) => p.kind !== 'block');
+  const singles = Inbox.pendingProposals(state.outputs, store).filter((p) => p.kind !== 'block' && !Inbox.eventSource(p.kind));
   const html = cards.map(taskCard).concat(singles.map(pendingRow)).join('');
   return html || '<li class="empty-note">Nothing waiting yet.</li>';
 }
@@ -415,10 +417,19 @@ function taskCard(card) {
   </li>`;
 }
 
+// Club meetings and socials the agents found, in their own Inbox section.
+function eventsMarkup(state) {
+  if (typeof Inbox === 'undefined') return '';
+  const list = Inbox.pendingProposals(state.outputs, store).filter((p) => Inbox.eventSource(p.kind));
+  return list.map(pendingRow).join('') || '<li class="empty-note">No new events.</li>';
+}
+
 function pendingRow(p) {
   const when = [p.start, p.time].filter(Boolean).join(' ');
   const what = p.what || [p.summary, p.reason].filter(Boolean).join(' — ');
-  return `<li class="pending-item" data-key="${esc(p.key)}">
+  const source = typeof Inbox !== 'undefined' ? Inbox.eventSource(p.kind) : null;
+  return `<li class="pending-item${source ? ' is-fun' : ''}" data-key="${esc(p.key)}">
+    ${source ? `<div class="fun-line"><span class="fun-badge">&#10024; event</span><span class="fun-source">${esc(source)}</span></div>` : ''}
     <div class="pending-title">${esc(p.title)}</div>
     <div class="pending-meta">${esc(when)}${p.location ? ' · ' + esc(p.location) : ''}</div>
     <details class="pending-what"><summary>what's this?</summary><p>${esc(what || 'No summary yet.')}</p></details>
@@ -1633,6 +1644,38 @@ function closePostModal(go) {
   if (r) r(go);
 }
 
+// "I'm in 3 · Maybe 1 · Can't make it 0 (mock)"
+function voteSummary(v) {
+  return v.counts.map((c) => `${c.label} ${c.count}`).join(' · ') + (v.mock ? ' (mock)' : '');
+}
+
+// "Ask the group" on an approved event: an RSVP poll through the one post door.
+async function askGroup() {
+  const id = currentPanelId;
+  const base = store.events.find((e) => e.id === parseEventId(id).baseId);
+  if (!base || typeof Inbox === 'undefined' || !Inbox.isEventItem(base)) return;
+  const req = Inbox.rsvpRequest(base);
+  const r = await confirmPost(req);
+  if (r) {
+    base.rsvp = { messageId: r.messageId, channelId: r.channelId || '', labels: req.options, method: r.method, mock: !!r.mock, at: new Date().toISOString() };
+    save();
+  }
+  openEventPanel(id);
+}
+
+// "Check RSVPs": read the poll once, on this button press.
+async function checkRsvps() {
+  const id = currentPanelId;
+  const base = store.events.find((e) => e.id === parseEventId(id).baseId);
+  if (!base || !base.rsvp) return;
+  setText('evm-rsvp-result', 'Checking…');
+  const v = await window.widgetAPI.discordReadVotes(base.rsvp);
+  if (!v.ok) { setText('evm-rsvp-result', 'Discord: ' + v.error); return; }
+  base.rsvp.result = voteSummary(v);
+  save();
+  setText('evm-rsvp-result', base.rsvp.result);
+}
+
 // "This event only" / "All events" chooser. Resolves 'one', 'all' or null.
 let choiceResolve = null;
 function askScope(title, text) {
@@ -1708,6 +1751,12 @@ function openEventPanel(id) {
 
   setText('evm-done', occurrenceDone() ? 'Mark not done' : 'Mark done');
   toggleHidden('evm-block', !(ev.source === 'gmail' && ev.sender));
+
+  // RSVP poll: only on events the agents found, never on deadlines.
+  const fun = typeof Inbox !== 'undefined' && Inbox.isEventItem(base);
+  toggleHidden('evm-rsvp', !fun);
+  toggleHidden('evm-rsvp-check', !(fun && base.rsvp));
+  setText('evm-rsvp-result', base.rsvp && base.rsvp.result ? base.rsvp.result : '');
 
   showDetailsMode();
   fillEditForm(ev);
@@ -2956,8 +3005,8 @@ function wireUI() {
     }
     decideTask(btn.dataset.task, btn.dataset.action === 'reject-task' ? 'reject' : 'approve');
   });
-  const pendingList = document.getElementById('team-pending');
-  if (pendingList) pendingList.addEventListener('click', (e) => {
+  // Study blocks and events share the same approve/edit/reject handling.
+  for (const pendingList of [el('team-pending'), el('team-events')].filter(Boolean)) pendingList.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const key = btn.dataset.key;
@@ -3132,6 +3181,8 @@ function wirePanels() {
   });
   on('ee-cancel', 'click', showDetailsMode);
   on('ee-save', 'click', saveEditForm);
+  on('evm-rsvp-ask', 'click', askGroup);
+  on('evm-rsvp-check', 'click', checkRsvps);
   if (eventPanel) eventPanel.addEventListener('click', (e) => { if (e.target === eventPanel) hideEventPanel(); });
 
   // --- Recurring "this event / all events" chooser ---

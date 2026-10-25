@@ -201,7 +201,11 @@
         <p class="hint">The Analyst adds these to your task list automatically. Reject one to remove it.</p>
         <ul id="team-tasks" class="pending-list"></ul>
 
-        <h3 class="section-title">Study blocks &amp; events</h3>
+        <h3 class="section-title">Events <span class="fun-badge">&#10024; fun</span></h3>
+        <p class="hint">Club meetings, socials and school events the agents found. Approve to add one to your calendar.</p>
+        <ul id="team-events" class="pending-list"></ul>
+
+        <h3 class="section-title">Study blocks &amp; deadlines</h3>
         <p class="hint">Nothing here is on your calendar until you approve it.</p>
         <ul id="team-pending" class="pending-list"></ul>
       </section>
@@ -570,6 +574,13 @@
           <div id="evm-notes-wrap" class="hidden">
             <h4 class="panel-label">Notes</h4>
             <p id="evm-notes" class="panel-text"></p>
+          </div>
+          <!-- Only for events the agents found (club meetings, socials), never deadlines -->
+          <div id="evm-rsvp" class="rsvp-row hidden">
+            <span class="fun-badge">&#10024; event</span>
+            <button id="evm-rsvp-ask" class="btn small primary">Ask the group</button>
+            <button id="evm-rsvp-check" class="btn small hidden">Check RSVPs</button>
+            <span id="evm-rsvp-result" class="hint"></span>
           </div>
           <div class="modal-actions">
             <button id="evm-delete" class="btn small danger">Delete</button>

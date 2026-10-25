@@ -1337,6 +1337,27 @@ check('the calendar an agent sees has times only', () => {
   assert.deepStrictEqual(out, [{ start: '2026-10-26T09:00', end: '2026-10-26T10:15' }]);
 });
 
+console.log('\n18d. Fun events and RSVP polls');
+
+check('only events the agents found get Ask the group, never deadlines or study blocks', () => {
+  assert.strictEqual(Inbox.isEventItem({ dedupeKey: 'agent:discord:2026-10-29:club-meeting' }), true);
+  assert.strictEqual(Inbox.isEventItem({ dedupeKey: 'agent:mail:2026-10-28:mesa-study-night' }), true);
+  assert.strictEqual(Inbox.isEventItem({ dedupeKey: 'agent:block:t1:2026-10-28T09:00' }), false);
+  assert.strictEqual(Inbox.isEventItem({ dedupeKey: 'agent:email:email-financial-aid' }), false);
+  assert.strictEqual(Inbox.isEventItem({ dedupeKey: 'canvas:event-assignment-1' }), false);
+  assert.strictEqual(Inbox.eventSource('mail'), 'from email');
+  assert.strictEqual(Inbox.eventSource('agent:discord:x'), 'from Discord');
+});
+
+check('the RSVP poll title has name, day, time and place, without course codes', () => {
+  const req = Inbox.rsvpRequest({ title: 'Study night [F26 MATH D001B 49]', start: '2026-10-29', time: '17:00', endTime: '18:30', location: 'S34' });
+  assert.strictEqual(req.type, 'poll');
+  assert.strictEqual(req.question, 'Who\'s in? Study night · Thu, Oct 29 5pm-6:30pm · S34');
+  assert.deepStrictEqual(req.options, ['I\'m in', 'Maybe', 'Can\'t make it']);
+  const post = require('./discord.js').buildPost(req);
+  assert.ok(!/\[|F26/.test(post.question), 'nothing in brackets reaches Discord');
+});
+
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 
