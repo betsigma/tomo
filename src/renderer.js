@@ -1226,10 +1226,78 @@ function studyEntries(groups, toItem) {
       ? `${name} · ${list.length} sessions · ${first.time}-${last.endTime || last.time}`
       : name;
     if (last.endTime && first.time) item.end = `${first.start}T${last.endTime}`;
-    item.extendedProps = { ...(item.extendedProps || {}), taskTitle: blockTask(first) };
+    item.extendedProps = { ...(item.extendedProps || {}), taskTitle: blockTask(first),
+      keys: list.map((x) => x.key || x.dedupeKey), sessions: list.length };
     out.push(item);
   }
   return out;
+}
+
+// ----- Preview card: clicking a calendar item opens a small card next to it,
+// with the actions that fit, instead of jumping to another tab. -----
+let peekEvent = null;
+
+function peekWhen(ev) {
+  if (ev.allDay) return ev.title.startsWith('Due ') ? 'Due today' : 'All day';
+  const t = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const day = ev.start.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${day} · ${t(ev.start)}${ev.end ? ' - ' + t(ev.end) : ''}`;
+}
+
+function openPeek(ev, anchor) {
+  const peek = el('peek');
+  if (!peek) return;
+  const p = ev.extendedProps || {};
+  peekEvent = ev;
+  setText('peek-title', ev.title);
+  setText('peek-when', peekWhen(ev) + (p.location ? ' · ' + p.location : ''));
+  const note = p.pending ? 'Suggested by the Planner. Not on your calendar until you approve it.'
+    : p.taskTitle ? `Study time for ${Inbox.shortTitle(p.taskTitle)}.` : '';
+  setText('peek-note', note);
+  el('peek-note').classList.toggle('hidden', !note);
+  const btn = (action, label, primary) => `<button type="button" class="btn small${primary ? ' primary' : ''}" data-peek="${action}">${label}</button>`;
+  const task = p.taskTitle && store.todos.find((t) => !t.done && blockGroup(t.title) === blockGroup(p.taskTitle));
+  setHTML('peek-actions', p.pending
+    ? btn('approve', p.sessions > 1 ? `Approve ${p.sessions}` : 'Approve', true) + btn('skip', 'Skip')
+    : p.taskTitle
+      ? (task ? btn('task', 'Open task', true) : '') + btn('close', 'Close')
+      : btn('details', 'Details', true) + btn('close', 'Close'));
+
+  // Place it beside the item, kept inside the window.
+  peek.classList.remove('hidden');
+  const r = anchor.getBoundingClientRect();
+  const w = peek.offsetWidth;
+  const h = peek.offsetHeight;
+  let left = r.right + 8;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 8);
+  const top = Math.min(Math.max(8, r.top), window.innerHeight - h - 8);
+  peek.style.left = left + 'px';
+  peek.style.top = top + 'px';
+  peek.querySelector('button')?.focus();
+}
+
+// Returns true when a card was open.
+function closePeek() {
+  const peek = el('peek');
+  if (!peek || peek.classList.contains('hidden')) return false;
+  peek.classList.add('hidden');
+  peekEvent = null;
+  return true;
+}
+
+function peekAction(action) {
+  const ev = peekEvent;
+  if (!ev) return;
+  const p = ev.extendedProps || {};
+  closePeek();
+  if (action === 'approve' || action === 'skip') {
+    for (const k of p.keys || []) decideProposal(k, action === 'skip' ? 'reject' : 'approve');
+  } else if (action === 'task') {
+    const task = store.todos.find((t) => !t.done && blockGroup(t.title) === blockGroup(p.taskTitle));
+    if (task) openTodoPanel(task.id);
+  } else if (action === 'details') {
+    openEventPanel(ev.id);
+  }
 }
 
 // Study blocks still waiting in the Inbox, drawn dashed. Display only: never stored.
@@ -1282,11 +1350,15 @@ function initCalendar() {
     buttonText: { timeGridWeek: 'Week', dayGridMonth: 'Month' },
     height: 'auto',
     dayMaxEvents: 2,          // at most 2 chips per day, then "+N more"
+    views: { timeGridWeek: { dayMaxEvents: 3 } },   // all-day row in Week: 3, then "+N more"
+    slotEventOverlap: false,  // events at the same time sit side by side, never on top
+    eventMaxStack: 3,         // more than 3 side by side -> "+N more"
     fixedWeekCount: false,
     slotMinTime: '08:00:00',
     slotMaxTime: '22:00:00',
     nowIndicator: true,
-    datesSet: (info) => { store.settings.calView = info.view.type; },
+    datesSet: (info) => { store.settings.calView = info.view.type; closePeek(); },
+    eventDidMount: (info) => { info.el.title = info.event.title; },   // full name on hover
     events: (info, success) => {
       const from = info.startStr.slice(0, 10);
       const to = info.endStr.slice(0, 10);
@@ -1294,21 +1366,19 @@ function initCalendar() {
       // Dots/count (compact mode) are painted onto the day cells after render.
       setTimeout(refreshDayDots, 0);
     },
-    // Click an event chip -> details panel (location, times, source, actions).
+    // Click an event chip -> a preview card beside it (details and actions live there).
     eventClick: (arg) => {
       arg.jsEvent.preventDefault();
+      arg.jsEvent.stopPropagation();   // the document click below would close it again
       console.log('[ui] calendar eventClick', arg.event.id);
-      if (arg.event.extendedProps.pending) { setView('inbox'); return; }
-      const taskTitle = arg.event.extendedProps.taskTitle;
-      const task = taskTitle && store.todos.find((t) => !t.done && blockGroup(t.title) === blockGroup(taskTitle));
-      if (task) { openTodoPanel(task.id); return; }
-      openEventPanel(arg.event.id);
+      openPeek(arg.event, arg.el);
     },
     // "+N more" -> our own day list instead of FullCalendar's popover.
     moreLinkClick: (arg) => {
-      // FullCalendar gives arg.date as UTC midnight of the cell's day. Reading it
-      // in local time (e.g. Pacific) shows the PREVIOUS day, so use the UTC parts.
-      const dateStr = arg.date.toISOString().slice(0, 10);
+      // For a day cell FullCalendar gives arg.date as UTC midnight; reading it in local
+      // time (e.g. Pacific) shows the PREVIOUS day, so use the UTC parts. A Week-view
+      // time slot is a real local time.
+      const dateStr = arg.allDay ? arg.date.toISOString().slice(0, 10) : toISODate(arg.date);
       console.log('[ui] more-link', dateStr);
       openDayList(dateStr);
       // FullCalendar opens its own popover on a falsy return; a non-string truthy value does nothing.
@@ -1524,6 +1594,7 @@ function parseEventId(id) {
 // Only one popup at a time. The repeat-scope question is the exception: it asks
 // about the event popup underneath it.
 function showPopup(node) {
+  closePeek();
   document.querySelectorAll('.modal').forEach((m) => {
     if (m !== node && m.id !== 'choice-modal') m.classList.add('hidden');
   });
@@ -1921,12 +1992,25 @@ function openDayList(date) {
     return `<li><details class="day-group"><summary>${esc(name)} · ${list.length} session${list.length === 1 ? '' : 's'} · ${esc(span)}</summary>
       <ul class="day-list">${list.map((e) => itemHtml(e, `Session ${e.time}-${e.endTime || ''}`)).join('')}</ul></details></li>`;
   };
-  const SHOWN = 6;
-  const html = rows.slice(0, SHOWN).map(rowHtml).join('') + (rows.length > SHOWN
-    ? `<li><details class="day-group"><summary>+${rows.length - SHOWN} more</summary><ul class="day-list">${rows.slice(SHOWN).map(rowHtml).join('')}</ul></details></li>`
-    : '');
-  setHTML('day-list', html || '<li class="empty-note">No events.</li>');
-  if (dayPanel) showPopup(dayPanel);
+  // Sections: what's due, what's scheduled, then study time. Each shows 4 rows, then "+N more".
+  const isDue = (e) => !e.time || e.endTime === e.time;
+  const sections = [
+    ['Due today', rows.filter((r) => r.event && isDue(r.event))],
+    ['Classes & events', rows.filter((r) => r.event && !isDue(r.event))],
+    ['Study', rows.filter((r) => r.study)]
+  ];
+  const SHOWN = 4;
+  const html = sections.filter(([, list]) => list.length).map(([name, list]) =>
+    `<li class="day-section">${esc(name)}</li>` +
+    list.slice(0, SHOWN).map(rowHtml).join('') + (list.length > SHOWN
+      ? `<li><details class="day-group"><summary>+${list.length - SHOWN} more</summary><ul class="day-list">${list.slice(SHOWN).map(rowHtml).join('')}</ul></details></li>`
+      : '')).join('');
+  setHTML('day-list', html || '<li class="empty-note">Nothing on this day.</li>');
+  closePeek();
+  if (dayPanel) {
+    dayPanel.classList.remove('hidden');
+    dayPanel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 }
 
 // --- Toast ---
@@ -2784,6 +2868,15 @@ function wireUI() {
   document.getElementById('feed-pill').addEventListener('click', () => setView('expanded'));
   document.getElementById('week-review').addEventListener('click', () => setView('inbox'));
 
+  // Preview card: its buttons, and any click outside it closes it.
+  document.getElementById('peek').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const b = e.target.closest('[data-peek]');
+    if (b) peekAction(b.dataset.peek);
+  });
+  document.addEventListener('click', () => closePeek());
+  window.addEventListener('resize', () => closePeek());
+
   // The "more" menu: open on click, close on any click elsewhere or on an item.
   const moreBtn = document.getElementById('moreBtn');
   const moreMenu = document.getElementById('moreMenu');
@@ -3013,7 +3106,6 @@ function wirePanels() {
     if (dayPanel) dayPanel.classList.add('hidden');
     openEventModal(d, null);
   });
-  if (dayPanel) dayPanel.addEventListener('click', (e) => { if (e.target === dayPanel) dayPanel.classList.add('hidden'); });
 
   // --- Undo toast ---
   on('toast-undo', 'click', () => {
@@ -3034,7 +3126,7 @@ function wirePanels() {
     const id = t.dataset.id;
     console.log('[ui] click', t.dataset.action, id || '');
     switch (t.dataset.action) {
-      case 'open-event':   if (dayPanel) dayPanel.classList.add('hidden'); openEventPanel(id); break;
+      case 'open-event':   openEventPanel(id); break;   // the day panel stays beside the calendar
       case 'open-todo':    openTodoPanel(id); break;
       case 'accept-event': setEventStatus(id, 'active'); break;
       case 'dismiss-event': setEventStatus(id, 'dismissed'); break;
@@ -3050,6 +3142,7 @@ function wirePanels() {
   // Escape also closes the details and day panels.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if (closePeek()) return;   // the preview card goes first
     hideEventPanel();
     if (dayPanel) dayPanel.classList.add('hidden');
   });

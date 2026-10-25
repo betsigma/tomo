@@ -134,6 +134,17 @@
        </div>
 
        <aside class="week-side">
+        <!-- Day panel: clicking a day or "+N more" fills this, so the week stays in view. -->
+        <section id="day-modal" class="day-side hidden" aria-labelledby="day-title">
+          <div class="day-side-head">
+            <h3 id="day-title"></h3>
+            <button id="day-close" class="btn icon-btn" type="button" title="Close" aria-label="Close day">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <ul id="day-list" class="day-list"></ul>
+          <button id="day-add" class="btn small primary" type="button">+ Add event</button>
+        </section>
         <div id="heads-up" class="heads-up hidden"></div>
         <button id="week-review" class="feed-pill hidden" type="button"></button>
 
@@ -592,17 +603,12 @@
       </div>
     </div>
 
-    <!-- ================= DAY LIST (the "+N more" link) ================= -->
-    <div id="day-modal" class="modal hidden">
-      <div class="modal-card">
-        <h3 id="day-title"></h3>
-        <ul id="day-list" class="day-list"></ul>
-        <div class="modal-actions">
-          <button id="day-add" class="btn small primary">+ Add event</button>
-          <span class="spacer"></span>
-          <button id="day-close" class="btn small">Close</button>
-        </div>
-      </div>
+    <!-- ================= PREVIEW CARD (opens next to a clicked calendar item) ================= -->
+    <div id="peek" class="peek hidden" role="dialog" aria-labelledby="peek-title">
+      <h4 id="peek-title"></h4>
+      <p id="peek-when" class="peek-meta"></p>
+      <p id="peek-note" class="peek-note hidden"></p>
+      <div id="peek-actions" class="peek-actions"></div>
     </div>
 
     <!-- ================= LINK FORM (add / edit a saved link) ================= -->
