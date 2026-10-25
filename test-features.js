@@ -1358,6 +1358,23 @@ check('the RSVP poll title has name, day, time and place, without course codes',
   assert.ok(!/\[|F26/.test(post.question), 'nothing in brackets reaches Discord');
 });
 
+console.log('\n18e. Shared-task done handoff');
+
+check('only shared tasks post, with a clean title, and never twice', () => {
+  const task = { title: 'Lab 5 report [F26 PHYS D004A]', due: '2026-10-30', shared: false };
+  assert.strictEqual(Inbox.donePost(task, 'Betsy', []), null, 'not shared: nothing to post');
+  task.shared = true;
+  assert.deepStrictEqual(Inbox.donePost(task, 'Betsy', []), { type: 'text', text: 'Betsy finished: Lab 5 report' });
+  const posted = [Inbox.taskKey(task.title, task.due)];
+  assert.strictEqual(Inbox.donePost(task, 'Betsy', posted), null, 'already posted');
+  const resynced = { ...task, title: 'Lab 5  report [F26 PHYS D004A]' };
+  assert.strictEqual(Inbox.donePost(resynced, 'Betsy', posted), null, 'a re-synced copy does not post again');
+  const store = { events: [], todos: [] };
+  Inbox.autoAddTasks(store, { ANALYST: { crunch_weeks: [], tasks: [{ id: 'a1', title: 'Quiz', due_date: '2026-10-31', priority_rank: 1,
+    urgency_reason: '', summary: '', deliverables: [], effort_estimate_minutes: 30, confidence: 'low', source: 'canvas' }] } });
+  assert.ok(!store.todos[0].shared, 'tasks from agent proposals are not shared');
+});
+
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 

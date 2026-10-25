@@ -609,7 +609,8 @@ function todoRow(t, dueIso) {
   const course = t.course ? `<span class="course-tag">${esc(t.course)}</span>` : '';
   const loc = t.location ? `<span class="todo-loc" title="${esc(t.location)}">&#128205; ${esc(t.location)}</span>` : '';
   const pomo = t.pomodoros ? `<span class="todo-pomo" title="${t.pomodoros} pomodoro${t.pomodoros === 1 ? '' : 's'} completed">&#127813; ${t.pomodoros}</span>` : '';
-  const meta = due ? `<span class="todo-meta">${esc(formatDue(t.due, t.time))}</span>` : '';
+  const meta = (due ? `<span class="todo-meta">${esc(formatDue(t.due, t.time))}</span>` : '') +
+    (t.shared ? '<span class="shared-badge" title="Shared: the group hears when you finish">shared</span>' : '');
   const sub = (loc || course || pomo || meta) ? `<span class="todo-sub">${loc}${course}${pomo}${meta}</span>` : '';
   const summary = taskSummary(t.id);
   const summaryHtml = summary ? `<span class="todo-summary">${esc(summary)}</span>` : '';
@@ -709,6 +710,26 @@ function setTaskDone(id, done) {
   save();
   renderTodos();       // also repaints Focus
   renderCalendar();
+  if (done) postFinished(t);
+}
+
+// A shared task ticked done: "<name> finished: <title>", once per task ever.
+// Un-ticking posts nothing; posting off or mock sends nothing.
+const finishing = new Set();   // a quick re-tick while one post is open must not post twice
+async function postFinished(t) {
+  if (typeof Inbox === 'undefined') return;
+  const d = store.settings.discord || {};
+  const key = Inbox.taskKey(t.title, t.due);
+  const req = Inbox.donePost(t, d.displayName || 'Betsy', store.sharedPosted || []);
+  if (!req || finishing.has(key)) return;
+  finishing.add(key);
+  const r = await (d.skipDoneConfirm ? window.widgetAPI.discordPostSend(req) : confirmPost(req))
+    .finally(() => finishing.delete(key));
+  if (!r || !r.ok) { if (r && r.error) setStatus('Discord: ' + r.error); return; }
+  if (r.mock) { setStatus('Mock: shown as sent, nothing posted'); return; }
+  setStatus(`Posted to ${r.channel}`);
+  store.sharedPosted = (store.sharedPosted || []).concat(key);
+  save();
 }
 
 // ---------------------------------------------------------------------------
@@ -1752,6 +1773,8 @@ function openEventPanel(id) {
   setText('evm-done', occurrenceDone() ? 'Mark not done' : 'Mark done');
   toggleHidden('evm-block', !(ev.source === 'gmail' && ev.sender));
 
+  toggleHidden('evm-shared-wrap', true);   // sharing is for tasks
+
   // RSVP poll: only on events the agents found, never on deadlines.
   const fun = typeof Inbox !== 'undefined' && Inbox.isEventItem(base);
   toggleHidden('evm-rsvp', !fun);
@@ -1802,6 +1825,9 @@ function openTodoPanel(id) {
   toggleHidden('evm-save-link', true);
   setText('evm-done', t.done ? 'Mark not done' : 'Mark done');
   toggleHidden('evm-block', true);
+  toggleHidden('evm-rsvp', true);
+  toggleHidden('evm-shared-wrap', false);
+  el('evm-shared').checked = !!t.shared;
 
   showDetailsMode();
   fillEditForm(t);
@@ -1944,6 +1970,7 @@ function togglePanelDone() {
   save();
   renderCalendar(); renderTodos();
   if (panelKind === 'event') openEventPanel(item.id); else openTodoPanel(item.id);
+  if (panelKind === 'todo' && item.done) postFinished(item);
 }
 
 // --- Delete = move to 'dismissed' (kept as a tombstone) + 5-second Undo toast ---
@@ -2596,6 +2623,7 @@ async function openSettings() {
   el('discord-posting').checked = !!dset.posting;
   el('discord-poll-channel').value = dset.pollChannelId || '';
   el('discord-display-name').value = dset.displayName || 'Betsy';
+  el('discord-skip-done-confirm').checked = !!dset.skipDoneConfirm;
 
   refreshMinutesInput.value = store.settings.refreshMinutes;
   if (fDeadlineWindow) fDeadlineWindow.value = store.settings.deadlineWindowDays || 2;
@@ -2896,6 +2924,7 @@ function wireSettings() {
   });
   on('discord-poll-channel', 'change', (e) => setDiscord({ pollChannelId: e.target.value.trim() }));
   on('discord-display-name', 'change', (e) => setDiscord({ displayName: e.target.value.trim() || 'Betsy' }));
+  on('discord-skip-done-confirm', 'change', (e) => setDiscord({ skipDoneConfirm: e.target.checked }));
   discordConnectBtn.addEventListener('click', async () => {
     const token = discordTokenInput.value.trim();
     const channel = discordChannelInput.value.trim();
@@ -3182,6 +3211,13 @@ function wirePanels() {
   on('ee-cancel', 'click', showDetailsMode);
   on('ee-save', 'click', saveEditForm);
   on('evm-rsvp-ask', 'click', askGroup);
+  on('evm-shared', 'change', (e) => {
+    const t = panelKind === 'todo' && store.todos.find((x) => x.id === currentPanelId);
+    if (!t) return;
+    t.shared = e.target.checked;
+    save();
+    renderTodos();
+  });
   on('evm-rsvp-check', 'click', checkRsvps);
   if (eventPanel) eventPanel.addEventListener('click', (e) => { if (e.target === eventPanel) hideEventPanel(); });
 

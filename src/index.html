@@ -466,6 +466,7 @@
           <label class="field-inline"><span><input id="discord-posting" type="checkbox" /> Allow Tomo to post</span></label>
           <input id="discord-poll-channel" type="text" placeholder="Post to channel ID (empty = the channel above)" />
           <input id="discord-display-name" type="text" placeholder="Name teammates see (e.g. Betsy)" />
+          <label class="field-inline"><span><input id="discord-skip-done-confirm" type="checkbox" /> Post finished shared tasks without asking first</span></label>
         </div>
 
         <!-- Gmail re-sync preview: nothing is created until you click Apply -->
@@ -582,6 +583,8 @@
             <button id="evm-rsvp-check" class="btn small hidden">Check RSVPs</button>
             <span id="evm-rsvp-result" class="hint"></span>
           </div>
+          <!-- Tasks only: a shared task posts "<name> finished: <title>" when ticked done -->
+          <label id="evm-shared-wrap" class="field-inline hidden"><span><input id="evm-shared" type="checkbox" /> Shared with the group (tell them when I finish)</span></label>
           <div class="modal-actions">
             <button id="evm-delete" class="btn small danger">Delete</button>
             <span class="spacer"></span>

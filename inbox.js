@@ -175,6 +175,14 @@
     return { type: 'poll', question: 'Who\'s in? ' + parts.join(' · '), options: ['I\'m in', 'Maybe', 'Can\'t make it'] };
   }
 
+  // "<name> finished: <title>" for a shared task, or null: not shared, or already
+  // posted (keyed by title + due, so a re-synced copy of the task doesn't post again).
+  function donePost(task, name, posted) {
+    if (!task || !task.shared) return null;
+    if ((posted || []).includes(taskKey(task.title, task.due))) return null;
+    return { type: 'text', text: `${name || 'Betsy'} finished: ${shortTitle(task.title).replace(/\[[^\]]*\]/g, '').trim()}` };
+  }
+
   // Once: take every approved study block off the calendar so the next run re-plans
   // under the rules above. A copy stays in store.archived.agentBlocksBackup.
   // Rejected blocks (dismissed) stay, so they are not suggested again.
@@ -488,7 +496,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, eventSource, rsvpRequest, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, isEventItem, eventSource, rsvpRequest, donePost, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

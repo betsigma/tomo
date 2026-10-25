@@ -463,6 +463,10 @@ html.theme-night .fc .fc-event.ev-study {
 .fun-source { font-size: 11px; font-weight: 700; color: var(--muted); }
 .pending-item.is-fun { border-color: var(--lavender); background: linear-gradient(135deg, var(--panel), #f7f1ff); }
 html.theme-night .pending-item.is-fun { background: var(--panel); }
+.shared-badge {
+  font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+  background: var(--src-discord); color: #24365c; flex: none;
+}
 .rsvp-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 
 /* Discord post preview */
