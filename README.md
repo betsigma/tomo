@@ -26,11 +26,11 @@ The orchestrator runs them in that order on a schedule and from **Run team** on 
 | Agent | Agent ID |
 |---|---|
 | Important Mail Scanner | 8d7890f4-07d7-46a7-a4dc-aaea471bd034 |
-| Deadline & Task Analyst | <App ID> |
-| Planner | <App ID> |
-| Digest Writer | <App ID> |
+| Deadline & Task Analyst | 78214564-afad-4d88-89f7-cd9d27575ff4 |
+| Planner | cc410b4f-3afa-4215-a824-dcb34586950f |
+| Digest Writer | 10872570-d4af-4c5b-a36b-fd08cae2fa0d |
 
-Example run (sample data): <share link>
+Example run (sample data): [View the run](https://agent.creao.ai/share/5ea0a462e62b8404d4943a5e70e48524)
 
 Agent IDs are safe to publish. API keys are not: they live only in `.env`, which is gitignored.
 
