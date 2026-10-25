@@ -170,7 +170,7 @@ html.theme-night .titlebar { background: linear-gradient(180deg, #172741, #0f1b2
 .tabbar {
   order: 10;   /* bottom in the small window */
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   background: var(--panel);
   border-top: 1px solid var(--border);
 }
@@ -185,6 +185,15 @@ html.theme-night .titlebar { background: linear-gradient(180deg, #172741, #0f1b2
 .tab.active { color: var(--text); font-weight: 800; }
 .tab.active svg { background: var(--accent); }
 .tab:focus-visible { outline: 2px solid var(--outline); outline-offset: -4px; border-radius: 10px; }
+.tab { position: relative; }
+.tab-badge {
+  position: absolute; top: 3px; left: calc(50% + 6px);
+  min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 999px; border: 1px solid var(--outline);
+  background: var(--accent-2); color: #fff;
+  font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+}
+.day-head h2 { font-size: 22px; font-weight: 800; line-height: 1.1; }
 
 /* Wide window: tabs become a pill row under the title bar. */
 @media (min-width: 600px) {
@@ -199,6 +208,7 @@ html.theme-night .titlebar { background: linear-gradient(180deg, #172741, #0f1b2
   .tab:hover { background: var(--hover); }
   .tab:hover svg, .tab.active svg { background: transparent; }
   .tab.active { background: var(--accent); box-shadow: 0 0 0 1px var(--outline); }
+  .tab-badge { position: static; }
 }
 
 /* ---------- BUTTONS ---------- */

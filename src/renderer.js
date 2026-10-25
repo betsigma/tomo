@@ -334,6 +334,16 @@ function renderTeam() {
   const pending = document.getElementById('team-pending');
   if (!pending) return;
   pending.innerHTML = pendingMarkup(state);
+  updateInboxBadge();
+}
+
+// Tab badge: how many suggestions are listed in the Inbox right now.
+function updateInboxBadge() {
+  const badge = document.getElementById('inbox-badge');
+  if (!badge) return;
+  const n = document.querySelectorAll('#view-inbox .pending-card, #view-inbox .pending-item').length;
+  badge.textContent = n > 99 ? '99+' : String(n);
+  badge.classList.toggle('hidden', !n);
 }
 
 function dueByTask() {
@@ -465,6 +475,7 @@ function renderTaskInbox() {
     : [];
   const mock = teamState && teamState.globalMode === 'mock' ? '<li class="mock-note">mock</li>' : '';
   list.innerHTML = mock + (pending.length ? pending.map(taskProposalRow).join('') : '<li class="empty-note">No new task proposals.</li>');
+  updateInboxBadge();
 }
 
 function taskProposalRow(p) {
@@ -2080,6 +2091,8 @@ function setView(mode) {
   if (focusView) focusView.classList.toggle('hidden', mode !== 'focus');
   const teamView = document.getElementById('view-team');
   if (teamView) teamView.classList.toggle('hidden', mode !== 'team');
+  const inboxView = document.getElementById('view-inbox');
+  if (inboxView) inboxView.classList.toggle('hidden', mode !== 'inbox');
   const brief = document.getElementById('morning-brief');
   if (brief) brief.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
   const estimateCard = document.getElementById('estimate-card');
@@ -2097,7 +2110,7 @@ function setView(mode) {
   if (mode === 'focus') {
     if (typeof focusUpdateChip === 'function') focusUpdateChip();
   }
-  if (mode === 'team') renderTeam();
+  if (mode === 'team' || mode === 'inbox') renderTeam();
 }
 
 // Only two looks now: light and night sky. Old 'auto' / 'dark' values migrate.
@@ -2633,6 +2646,9 @@ function wireUI() {
     }
     if (btn.dataset.action === 'reject-proposal') {
       decideProposal(key, 'reject');
+    }
+    if (btn.dataset.action === 'approve-proposal') {
+      decideProposal(key, 'approve');
     }
   });
 

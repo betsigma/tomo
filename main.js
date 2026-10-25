@@ -175,7 +175,8 @@ const VIEW_SIZES = {
   expanded: { width: 820, height: 660 },
   links:    { width: 820, height: 660 },
   focus:    { width: 820, height: 660 },
-  team:     { width: 440, height: 720 }
+  team:     { width: 440, height: 720 },
+  inbox:    { width: 440, height: 720 }
 };
 
 // ---------------------------------------------------------------------------
