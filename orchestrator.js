@@ -155,7 +155,8 @@ function createOrchestrator(opts) {
       // 3) Planner (proposals only; checked against the real calendar)
       const calendar = T.buildCalendar(store, now());
       const team = (store.settings && store.settings.team) || {};
-      const windows = T.freeWindows(calendar, now(), { dayStart: team.dayStart, dayEnd: team.dayEnd });
+      const rules = { ...Inbox.PLAN_RULES, ...(team.rules || {}) };
+      const windows = T.freeWindows(calendar, now(), rules);
       const pIn = {
         ranked_tasks: ranked.slice(0, 12),
         calendar,
@@ -165,12 +166,17 @@ function createOrchestrator(opts) {
       const planner = await step('PLANNER', pIn, force);
       if (!planner.ok || !planner.output) halt('PLANNER', planner, 'Planner failed');
       // Mock samples are not tied to the real calendar, so only live output is rule-checked.
+      const fit = T.checkProposals(planner.output.proposals, calendar, windows);
+      const dueById = Object.fromEntries(ranked.map((t) => [t.id, t.due_date]));
+      const ruled = Inbox.fitBlocks(fit.kept, dueById, rules);
       const checked = planner.source === 'mock'
         ? { kept: planner.output.proposals, dropped: [] }
-        : T.checkProposals(planner.output.proposals, calendar, windows);
+        : { kept: ruled.kept, dropped: fit.dropped.concat(ruled.dropped) };
       const previous = (state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [];
+      const merged = Inbox.replacePending(previous, checked.kept);
       state.outputs.PLANNER = {
-        proposals: Inbox.replacePending(previous, checked.kept),
+        // Leftovers from earlier runs must pass today's rules too (cap, deadlines).
+        proposals: planner.source === 'mock' ? merged : Inbox.fitBlocks(merged, dueById, rules).kept,
         adjustment_note: planner.output.adjustment_note,
         dropped: checked.dropped
       };

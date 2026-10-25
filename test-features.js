@@ -1185,6 +1185,110 @@ check('an Analyst task with an empty id gets a stable id from its title', () => 
   assert.strictEqual(T.fillTaskIds([{ id: '', title: 'Club dues' }])[0].id, 'email-club-dues', 'same title, same id');
 });
 
+console.log('\n18b. Calendar rules: due dates, deadlines, cap, duplicates');
+
+check('Canvas due dates stay on their day (all-day and UTC-timed)', () => {
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'BEGIN:VEVENT', 'UID:event-assignment-1598610', 'DTSTART;VALUE=DATE;VALUE=DATE:20261022',
+    'SUMMARY:[In-person] Exam 1 [F26 MATH D001B 49 Calculus Ii]', 'END:VEVENT',
+    'BEGIN:VEVENT', 'UID:event-assignment-2', 'DTSTART:20261026T173000Z', 'DTEND:20261026T173000Z',
+    'SUMMARY:Peer Review Workshop 2', 'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+  const items = require('./canvas.js').normalizeCalendar(ics);
+  const exam = items.find((i) => /Exam 1/.test(i.title));
+  assert.strictEqual(exam.start, '2026-10-22', 'an all-day date is never shifted');
+  assert.ok(!exam.time, 'all-day has no time');
+  const peer = items.find((i) => /Peer Review/.test(i.title));
+  const local = new Date(Date.UTC(2026, 9, 26, 17, 30));
+  const pad = (n) => String(n).padStart(2, '0');
+  assert.strictEqual(peer.start, `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}`);
+  assert.strictEqual(peer.time, `${pad(local.getHours())}:${pad(local.getMinutes())}`);
+});
+
+check('no study block after a deadline, under 25 minutes, in protected time or after 2 am', () => {
+  const due = { exam: '2026-10-22', lab: '2026-10-28T09:30', paper: '2026-10-30' };
+  const b = (task_id, start, end) => ({ task_id, title: task_id, start, end, reason: '' });
+  const { kept, dropped } = Inbox.fitBlocks([
+    b('exam', '2026-10-26T12:25', '2026-10-26T13:13'),   // after the exam
+    b('lab', '2026-10-28T09:00', '2026-10-28T09:50'),    // runs past a timed due
+    b('paper', '2026-10-26T16:35', '2026-10-26T16:55'),  // 20 min leftover
+    b('paper', '2026-10-26T20:15', '2026-10-26T20:45'),  // dinner 20:00-21:00
+    b('paper', '2026-10-27T01:30', '2026-10-27T02:30'),  // past 2 am
+    b('paper', '2026-10-27T00:30', '2026-10-27T01:20'),  // after midnight, before 2 am: fine
+    b('paper', '2026-10-26T13:00', '2026-10-26T13:50')
+  ], due);
+  assert.deepStrictEqual(dropped.map((d) => d.why).sort(), [
+    'after 02:00', 'after the due date', 'after the due date', 'during protected time', 'shorter than 25 min'
+  ]);
+  assert.ok(dropped.some((d) => d.proposal.task_id === 'exam' && d.why === 'after the due date'));
+  assert.ok(dropped.some((d) => d.proposal.task_id === 'lab' && d.why === 'after the due date'));
+  assert.deepStrictEqual(kept.map((k) => k.start), ['2026-10-26T13:00', '2026-10-27T00:30']);
+});
+
+check('the daily study cap is respected, and after-midnight time counts toward the day before', () => {
+  const blocks = [];
+  for (let h = 9; h < 20; h++) blocks.push({ task_id: 't', title: 't', start: `2026-10-26T${String(h).padStart(2, '0')}:00`, end: `2026-10-26T${String(h).padStart(2, '0')}:50` });
+  blocks.push({ task_id: 't', title: 't', start: '2026-10-27T00:00', end: '2026-10-27T00:50' });
+  const { kept, dropped } = Inbox.fitBlocks(blocks, { t: '2026-11-30' });
+  const minutes = kept.length * 50;
+  assert.ok(minutes <= Inbox.PLAN_RULES.capMinutes, 'at most 7 hours a day');
+  assert.strictEqual(kept.length, 8, '8 x 50 min fits under 420; the 9th does not');
+  assert.ok(dropped.every((d) => d.why === 'over the daily study cap'));
+  assert.ok(dropped.some((d) => d.proposal.start === '2026-10-27T00:00'), '00:00 belongs to Monday\'s study day');
+});
+
+check('free windows skip dinner and run until 2 am', () => {
+  const T = require('./teamInputs.js');
+  const now = new Date(2026, 9, 26, 8, 0, 0);
+  const wins = T.freeWindows([], now, { ...Inbox.PLAN_RULES, days: 1 });
+  assert.deepStrictEqual(wins, [
+    { start: '2026-10-26T09:00', end: '2026-10-26T20:00' },
+    { start: '2026-10-26T21:00', end: '2026-10-27T02:00' }
+  ]);
+});
+
+check('approved study blocks never reuse the real title, and duplicate events share one key', () => {
+  const store = { events: [], todos: [] };
+  const p = { key: 'agent:block:t1:2026-10-26T13:00', kind: 'block', title: '[In-person] Exam 1 [F26 MATH D001B 49 Calculus Ii]',
+    start: '2026-10-26', time: '13:00', endTime: '13:50', summary: '', what: '' };
+  Inbox.approveProposal(store, p, null, () => 'b1');
+  assert.strictEqual(store.events[0].title, 'Study: [In-person] Exam 1');
+  assert.strictEqual(store.events[0].taskTitle, p.title, 'the link back to the task is kept');
+  const a = { title: 'Office Hours [F26 STAT]', start: '2026-10-26', time: '16:45', endTime: '20:00', dedupeKey: 'canvas:event-calendar-event-607105' };
+  const b = { ...a, title: 'Office  Hours [F26 STAT]', dedupeKey: 'canvas:event-calendar-event-607245' };
+  assert.strictEqual(Sync.sameEventKey(a), Sync.sameEventKey(b));
+  assert.notStrictEqual(Sync.sameEventKey(a), Sync.sameEventKey({ ...a, time: '17:00' }));
+  const T = require('./teamInputs.js');
+  const cal = T.buildCalendar({ events: [{ status: 'active', title: 'Pop-Quiz', start: '2026-10-26', time: '21:00', endTime: '21:00' }] }, new Date(2026, 9, 26, 8));
+  assert.strictEqual(cal.length, 0, 'a due time (start == end) is not busy time');
+});
+
+check('approved blocks are cleared once, with a backup', () => {
+  const store = { settings: {}, events: [
+    { dedupeKey: 'agent:block:t:2026-10-26T13:00', status: 'active' },
+    { dedupeKey: 'agent:block:t:2026-10-26T15:00', status: 'dismissed' },
+    { dedupeKey: 'canvas:x', status: 'active' }
+  ] };
+  assert.strictEqual(Inbox.resetBlocksOnce(store, '2026-10-25T12:00:00Z'), true);
+  assert.deepStrictEqual(store.events.map((e) => e.dedupeKey), ['agent:block:t:2026-10-26T15:00', 'canvas:x']);
+  assert.strictEqual(store.archived.agentBlocksBackup.events.length, 1);
+  assert.strictEqual(Inbox.resetBlocksOnce(store, 'later'), false, 'only once');
+});
+
+check('finished tasks are not sent back to the Analyst as overdue', () => {
+  const T = require('./teamInputs.js');
+  const store = { events: [], todos: [
+    { source: 'agent', title: 'Midterm  [F26 CIS]', due: '2026-10-24', done: true, agentTaskId: 'mv5' }
+  ], archived: { legacy_canvas: [
+    { id: 'canvas:event-assignment-1596664', dedupeKey: 'canvas:event-assignment-1596664', title: 'Midterm [F26 CIS]', due: '2026-10-24' },
+    { id: 'canvas:event-assignment-1596651', dedupeKey: 'canvas:event-assignment-1596651', title: 'Week 6 Programming', due: '2026-10-31' }
+  ] } };
+  const built = T.buildAnalystInput(store, {}, [], new Date(2026, 9, 25, 12));
+  assert.deepStrictEqual(built.input.tasks.map((t) => t.title), ['Week 6 Programming']);
+});
+
 console.log('\n19. Weekly Discord digest');
 const Discord = require('./discord.js');
 

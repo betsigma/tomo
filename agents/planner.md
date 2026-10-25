@@ -58,8 +58,14 @@ and "estimate_history". All times are local "YYYY-MM-DDTHH:MM".
    or another proposed block. Never place a block outside the free_windows.
 5. Finish each task before its due_date when possible; prefer earlier windows for higher priority.
    If a task cannot fit, leave it out rather than breaking a rule.
-6. reason: one short sentence (priority, session n of m, any history adjustment).
-7. adjustment_note: one sentence on how estimate_history changed block lengths, or "" if it didn't.
+6. Hard limits (the app removes any block that breaks one):
+   - Never place a block that ends after the task's due_date (a date-only due_date means 23:59 that day).
+   - Every block is at least 25 minutes. Never fill a leftover gap shorter than that.
+   - At most 7 hours (420 minutes) of study per day. Time after midnight and before 09:00 counts
+     toward the previous day.
+   - The free_windows already leave out dinner (20:00-21:00) and anything after 02:00; keep it that way.
+7. reason: one short sentence (priority, session n of m, any history adjustment).
+8. adjustment_note: one sentence on how estimate_history changed block lengths, or "" if it didn't.
 
 Return ONLY a JSON object: {"proposals":[...],"adjustment_note":"..."}. No prose, no markdown fences.
 ```

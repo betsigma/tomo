@@ -427,6 +427,32 @@ html.theme-night .heads-up { background: #2a2a40; }
 html.theme-night .fc .fc-event.ev-pending { background: transparent; color: var(--text); }
 .fc .fc-event.ev-pending .fc-event-main, .fc .fc-event.ev-pending .fc-event-title { color: inherit; }
 
+/* Approved study time: striped and italic, so it never reads as a real class or exam. */
+.fc .fc-event.ev-study {
+  background: repeating-linear-gradient(135deg, #fff1df 0 6px, #ffe6c7 6px 12px);
+  border: 1px solid #c98a4b; border-left: 4px solid #c98a4b; color: #6b2d4f;
+  font-style: italic;
+}
+html.theme-night .fc .fc-event.ev-study {
+  background: repeating-linear-gradient(135deg, #2b2a3d 0 6px, #333148 6px 12px); color: var(--text);
+}
+.fc .fc-event.ev-study .fc-event-main, .fc .fc-event.ev-study .fc-event-title { color: inherit; }
+
+/* Canvas due times (start == end): a slim marker in the all-day row. */
+.fc .fc-event.ev-due {
+  background: transparent; border: none; border-left: 3px solid var(--danger);
+  color: var(--text); font-size: 11px; font-weight: 700;
+}
+.fc .fc-event.ev-due .fc-event-main, .fc .fc-event.ev-due .fc-event-title { color: inherit; }
+
+/* Day popup: study sessions and the overflow fold into collapsed groups. */
+.day-group summary {
+  cursor: pointer; padding: 6px 8px; border-radius: 10px;
+  font-size: 12px; font-weight: 700; font-style: italic; color: var(--text);
+}
+.day-group summary:hover { background: var(--hover); }
+.day-group .day-list { margin: 2px 0 4px 12px; }
+
 /* ---------- STATUS BAR ---------- */
 .statusbar {
   display: flex;

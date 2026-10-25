@@ -95,6 +95,72 @@
     return out;
   }
 
+  // ----- Study-block rules. The Planner's output is untrusted, so the app enforces these. -----
+  // The study day runs dayStart -> dayEnd; a dayEnd earlier than dayStart means after midnight.
+  const PLAN_RULES = { dayStart: '09:00', dayEnd: '02:00', capMinutes: 420, minMinutes: 25,
+    quiet: [{ start: '20:00', end: '21:00' }] };
+
+  function hm(t) { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); }
+  function prevDate(date) {
+    const [y, mo, d] = date.split('-').map(Number);
+    const p = new Date(y, mo - 1, d - 1);
+    return `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, '0')}-${String(p.getDate()).padStart(2, '0')}`;
+  }
+  // Which study day a stamp belongs to, and its minute on that day (01:00 -> previous day, 1500).
+  function studyClock(stamp, rules) {
+    const { date, time } = splitStamp(stamp);
+    const at = hm(time);
+    return at < hm(rules.dayStart) ? { day: prevDate(date), at: at + 1440 } : { day: date, at };
+  }
+
+  // "Week 6 Programming Assignments - Arrays [F26 CIS D022A ...]" -> without the course tag.
+  function shortTitle(title) {
+    return String(title || '').replace(/\s*\[[^\]]*\]\s*$/, '').replace(/\s+/g, ' ').trim() || 'Study';
+  }
+
+  // Keep only blocks that follow the rules: at least minMinutes, never after the task's
+  // due date, inside the study day, outside protected time, and under the daily cap.
+  // dueById: task id -> 'YYYY-MM-DD' (end of that day) or 'YYYY-MM-DDTHH:MM'.
+  function fitBlocks(proposals, dueById, rules) {
+    const r = { ...PLAN_RULES, ...(rules || {}) };
+    const dayEnd = hm(r.dayEnd) <= hm(r.dayStart) ? hm(r.dayEnd) + 1440 : hm(r.dayEnd);
+    const used = {};
+    const kept = [];
+    const dropped = [];
+    const sorted = (proposals || []).slice().sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    for (const p of sorted) {
+      const s = studyClock(p.start, r);
+      const e = studyClock(p.end, r);
+      const len = e.day === s.day ? e.at - s.at : -1;
+      const dueRaw = String((dueById || {})[p.task_id] || '');
+      const due = dueRaw.length > 10 ? dueRaw.slice(0, 16) : (dueRaw ? dueRaw.slice(0, 10) + 'T23:59' : '');
+      let why = null;
+      if (len < r.minMinutes) why = len < 0 ? 'crosses the end of the study day' : `shorter than ${r.minMinutes} min`;
+      else if (due && String(p.end).slice(0, 16) > due) why = 'after the due date';
+      else if (e.at > dayEnd) why = 'after ' + r.dayEnd;
+      else if ((r.quiet || []).some((q) => s.at < hm(q.end) && hm(q.start) < e.at)) why = 'during protected time';
+      else if ((used[s.day] || 0) + len > r.capMinutes) why = 'over the daily study cap';
+      if (why) { dropped.push({ proposal: p, why }); continue; }
+      used[s.day] = (used[s.day] || 0) + len;
+      kept.push(p);
+    }
+    return { kept, dropped };
+  }
+
+  // Once: take every approved study block off the calendar so the next run re-plans
+  // under the rules above. A copy stays in store.archived.agentBlocksBackup.
+  // Rejected blocks (dismissed) stay, so they are not suggested again.
+  function resetBlocksOnce(store, at) {
+    if (!store.settings) store.settings = {};
+    if (store.settings.studyBlocksResetAt) return false;
+    const isApprovedBlock = (e) => e && String(e.dedupeKey || '').indexOf('agent:block:') === 0 && e.status === 'active';
+    store.archived = store.archived || {};
+    store.archived.agentBlocksBackup = { at, events: (store.events || []).filter(isApprovedBlock) };
+    store.events = (store.events || []).filter((e) => !isApprovedBlock(e));
+    store.settings.studyBlocksResetAt = at;
+    return true;
+  }
+
   // Same assignment even if the Analyst gave it a different id on another run.
   function taskKey(title, due) {
     return String(title || '').replace(/\s+/g, ' ').trim().toLowerCase() + '|' + String(due || '').slice(0, 10);
@@ -128,9 +194,12 @@
     if (!store.events) store.events = [];
     if (store.events.some((e) => e && e.dedupeKey === proposal.key)) return store;
     const fields = withEdits(proposal, edits);
+    const block = proposal.kind === 'block';
     store.events.push({
       id: id(),
-      title: fields.title,
+      // A study block never reuses the real task's title; taskTitle links it back.
+      title: block && fields.title === proposal.title ? 'Study: ' + shortTitle(proposal.title) : fields.title,
+      taskTitle: block ? proposal.title : undefined,
       start: fields.start,
       time: fields.time,
       endTime: fields.endTime,
@@ -156,7 +225,7 @@
     const hit = ((store && store.events) || []).find((e) => e && e.dedupeKey === proposal.key);
     if (!hit) return approveProposal(store, proposal, edits, () => 'agent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));
     const fields = withEdits(proposal, edits);
-    hit.title = fields.title;
+    hit.title = proposal.kind === 'block' && fields.title === proposal.title ? 'Study: ' + shortTitle(proposal.title) : fields.title;
     hit.start = fields.start;
     hit.time = fields.time;
     hit.endTime = fields.endTime;
@@ -391,7 +460,7 @@
   }
 
   return {
-    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, groupProposals, replacePending, briefBullets,
+    listProposals, pendingProposals, approveProposal, editProposal, rejectProposal, taskKey, mergeDuplicateTodos, PLAN_RULES, fitBlocks, shortTitle, studyClock, resetBlocksOnce, groupProposals, replacePending, briefBullets,
     listTaskProposals, pendingTaskProposals, approveTask, rejectTask, applyTaskUpdates, autoAddTasks
   };
 });

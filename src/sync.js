@@ -114,5 +114,10 @@
     store.todos = store.todos.filter((t) => t.source !== source);
   }
 
-  return { uid, mergeItems, removeSource };
+  // Canvas can list one event under two UIDs. Same title, date, start and end = same event.
+  function sameEventKey(e, date) {
+    return [String(e.title || '').replace(/\s+/g, ' ').trim().toLowerCase(), date || e.start, e.time || '', e.endTime || ''].join('|');
+  }
+
+  return { uid, mergeItems, removeSource, sameEventKey };
 });

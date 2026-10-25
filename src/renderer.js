@@ -367,11 +367,17 @@ function dueByTask() {
   return due;
 }
 
+// Planner blocks that pass the rules; older runs may hold blocks after a deadline or over the cap.
+function allowedBlocks(state) {
+  const raw = (state && state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [];
+  return typeof Inbox === 'undefined' ? raw : Inbox.fitBlocks(raw, dueByTask()).kept;
+}
+
 function pendingMarkup(state) {
   if (typeof Inbox === 'undefined') return '<li class="empty-note">Nothing waiting yet.</li>';
   // Approved and rejected blocks both leave an event with their key; show only undecided ones.
   const decided = new Set((store.events || []).map((e) => e && e.dedupeKey).filter(Boolean));
-  const raw = ((state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [])
+  const raw = allowedBlocks(state)
     .filter((p) => !decided.has('agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
   const cards = Inbox.groupProposals(raw, dueByTask());
   const singles = Inbox.pendingProposals(state.outputs, store).filter((p) => p.kind !== 'block');
@@ -557,7 +563,7 @@ function todoParts(t) {
   const parts = Array.isArray(t.deliverables) ? t.deliverables : [];
   const group = blockGroup(t.title);
   const sessions = (store.events || []).filter((e) => e.status === 'active' && isStudyBlock(e) &&
-    blockGroup(e.title) === group).length;
+    blockGroup(blockTask(e)) === group).length;
   if (parts.length < 2 && !sessions) return '';
   const done = new Set(t.partsDone || []);
   const label = [
@@ -948,7 +954,7 @@ function openLinkModal(id) {
     if (dateEl) dateEl.value = '';
     toggleHidden('lm-delete', true);
   }
-  if (linkModal) linkModal.classList.remove('hidden');
+  if (linkModal) showPopup(linkModal);
   if (titleEl) titleEl.focus();
 }
 function closeLinkModal() { if (linkModal) linkModal.classList.add('hidden'); editingLinkId = null; }
@@ -1139,16 +1145,19 @@ function toFCEvent(ev, opts = {}) {
   // The pale yellow manual chips need dark plum text; the others are fine white.
   const textColor = (ev.source === 'manual' || ev.source === 'agent') ? '#6b2d4f' : '#ffffff';
   const done = opts.done !== undefined ? opts.done : !!ev.done;
+  const date = opts.date || ev.start;
+  // Canvas gives a due time as start == end (10:30-10:30): show a "Due" marker, not an event.
+  const dueOnly = !!ev.time && ev.endTime === ev.time;
   return {
     id: opts.id || ev.id,
-    title: ev.title,
-    start: ev.time ? `${ev.start}T${ev.time}` : ev.start,
-    end: ev.time && ev.endTime && ev.endTime > ev.time ? `${ev.start}T${ev.endTime}` : undefined,
-    allDay: !ev.time,
+    title: dueOnly ? `Due ${ev.time} · ${ev.title}` : ev.title,
+    start: ev.time && !dueOnly ? `${date}T${ev.time}` : date,
+    end: ev.time && !dueOnly && ev.endTime && ev.endTime > ev.time ? `${date}T${ev.endTime}` : undefined,
+    allDay: !ev.time || dueOnly,
     backgroundColor: color,
     borderColor: color,
     textColor,
-    classNames: done ? ['ev-done'] : [],
+    classNames: (done ? ['ev-done'] : []).concat(dueOnly ? ['ev-due'] : []),
     extendedProps: {
       source: ev.source,
       done,
@@ -1162,42 +1171,62 @@ function toFCEvent(ev, opts = {}) {
 // Every event (and every generated recurrence occurrence) inside [from, to).
 function eventsInRange(from, to) {
   const out = [];
-  const blocks = new Map();   // assignment -> its study blocks in view
+  const blocks = new Map();   // task + day -> its study blocks
+  const seen = new Set();     // Canvas sometimes lists the same event under two UIDs
   const finished = new Set((store.todos || []).filter((t) => t.done).map((t) => blockGroup(t.title)));
+  const add = (view, opts) => {
+    const key = Sync.sameEventKey(view, opts && opts.date);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(toFCEvent(view, opts));
+  };
   for (const e of activeEvents()) {
     const rec = e.recurrence;
     if (!rec || !rec.freq || rec.freq === 'none') {
       if (e.start < from || e.start >= to) continue;
       if (isStudyBlock(e)) {
-        const k = blockGroup(e.title);
-        if (finished.has(k)) continue;   // no study time left for a finished task
+        const task = blockGroup(blockTask(e));
+        if (finished.has(task)) continue;   // no study time left for a finished task
+        const k = task + '|' + e.start;
         if (!blocks.has(k)) blocks.set(k, []);
         blocks.get(k).push(e);
-      } else out.push(toFCEvent(e));
+      } else add(e);
       continue;
     }
     // Recurring: draw ONLY the occurrences that land in the visible window.
     // Recur.occurrences already drops removed dates and applies per-date edits.
     for (const occ of Recur.occurrences(e, from, to)) {
-      out.push(toFCEvent(occ.view, { id: occ.view.id, done: occ.done, baseId: e.id, date: occ.date }));
+      add(occ.view, { id: occ.view.id, done: occ.done, baseId: e.id, date: occ.date });
     }
   }
-  return out.concat(firstBlockPerTask(blocks, toFCEvent));
+  return out.concat(studyEntries(blocks, (e) => {
+    const item = toFCEvent(e);
+    item.classNames = item.classNames.concat('ev-study');
+    return item;
+  }));
 }
 
 function isStudyBlock(e) { return String(e.dedupeKey || '').startsWith('agent:block:'); }
+// The task a study block belongs to (blocks made before taskTitle existed carry it as their title).
+function blockTask(e) { return e.taskTitle || e.title; }
 // Blocks are grouped by assignment title: the Analyst's task id can change between runs.
 function blockGroup(title) { return String(title || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
 
-// One calendar item per assignment instead of every session: its first block in
-// view, labelled with the session count. The task row lists the parts.
-function firstBlockPerTask(groups, toItem) {
+// One entry per task per day instead of every session, e.g.
+// "Study: Midterm · 3 sessions · 12:40-15:00". The task row lists the parts.
+function studyEntries(groups, toItem) {
   const out = [];
   for (const list of groups.values()) {
-    list.sort((a, b) => `${a.start}T${a.time || ''}`.localeCompare(`${b.start}T${b.time || ''}`));
-    const item = toItem(list[0]);
-    if (list.length > 1) item.title += ` · ${list.length} sessions`;
-    item.extendedProps = { ...(item.extendedProps || {}), taskTitle: list[0].title };
+    list.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const first = list[0];
+    const last = list[list.length - 1];
+    const item = toItem(first);
+    const name = 'Study: ' + (typeof Inbox !== 'undefined' ? Inbox.shortTitle(blockTask(first)) : blockTask(first));
+    item.title = list.length > 1
+      ? `${name} · ${list.length} sessions · ${first.time}-${last.endTime || last.time}`
+      : name;
+    if (last.endTime && first.time) item.end = `${first.start}T${last.endTime}`;
+    item.extendedProps = { ...(item.extendedProps || {}), taskTitle: blockTask(first) };
     out.push(item);
   }
   return out;
@@ -1206,14 +1235,15 @@ function firstBlockPerTask(groups, toItem) {
 // Study blocks still waiting in the Inbox, drawn dashed. Display only: never stored.
 function pendingBlocksInRange(from, to) {
   if (!teamState || typeof Inbox === 'undefined') return [];
+  const allowed = new Set(allowedBlocks(teamState).map((p) => 'agent:block:' + (p.task_id || '') + ':' + (p.start || '')));
   const groups = new Map();
   for (const p of Inbox.pendingProposals(teamState.outputs, store)) {
-    if (p.kind !== 'block' || p.start < from || p.start >= to) continue;
-    const k = blockGroup(p.title);
+    if (p.kind !== 'block' || !allowed.has(p.key) || p.start < from || p.start >= to) continue;
+    const k = blockGroup(p.title) + '|' + p.start;
     if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(p);
+    groups.get(k).push({ ...p, taskTitle: p.title });
   }
-  return firstBlockPerTask(groups, (p) => ({
+  return studyEntries(groups, (p) => ({
     id: 'pending:' + p.key,
     title: p.title,
     start: p.time ? `${p.start}T${p.time}` : p.start,
@@ -1410,7 +1440,7 @@ function openEventModal(dateStr, eventId) {
   if (evCount) evCount.value = '10';
   syncRepeatVisibility();
 
-  modal.classList.remove('hidden');
+  showPopup(modal);
   evTitle.focus();
 }
 
@@ -1488,6 +1518,15 @@ function parseEventId(id) {
   const at = String(id || '').indexOf('@');
   if (at < 0) return { baseId: id, date: null };
   return { baseId: id.slice(0, at), date: id.slice(at + 1) };
+}
+
+// Only one popup at a time. The repeat-scope question is the exception: it asks
+// about the event popup underneath it.
+function showPopup(node) {
+  document.querySelectorAll('.modal').forEach((m) => {
+    if (m !== node && m.id !== 'choice-modal') m.classList.add('hidden');
+  });
+  node.classList.remove('hidden');
 }
 
 // "This event only" / "All events" chooser. Resolves 'one', 'all' or null.
@@ -1568,7 +1607,7 @@ function openEventPanel(id) {
 
   showDetailsMode();
   fillEditForm(ev);
-  if (eventPanel) eventPanel.classList.remove('hidden');
+  if (eventPanel) showPopup(eventPanel);
 }
 
 // Is the currently shown event (or occurrence) marked done?
@@ -1613,7 +1652,7 @@ function openTodoPanel(id) {
 
   showDetailsMode();
   fillEditForm(t);
-  if (eventPanel) eventPanel.classList.remove('hidden');
+  if (eventPanel) showPopup(eventPanel);
 }
 
 function panelItem() {
@@ -1848,13 +1887,45 @@ function openDayList(date) {
     }
   }
   events.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-  setHTML('day-list', events.length ? events.map((e) => `
+
+  // One row per real event (duplicates dropped); study sessions folded into one row per task.
+  const finished = new Set((store.todos || []).filter((t) => t.done).map((t) => blockGroup(t.title)));
+  const seen = new Set();
+  const rows = [];
+  const studies = new Map();
+  for (const e of events) {
+    if (isStudyBlock(e)) {
+      const task = blockGroup(blockTask(e));
+      if (finished.has(task)) continue;
+      if (!studies.has(task)) { studies.set(task, []); rows.push({ study: studies.get(task) }); }
+      studies.get(task).push(e);
+      continue;
+    }
+    const key = Sync.sameEventKey(e, dateStr);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ event: e });
+  }
+  const itemHtml = (e, label) => `
     <li><button class="day-item" data-action="open-event" data-id="${e.id}">
       <span class="src-dot" style="background:${SOURCE_COLORS[e.source] || SOURCE_COLORS.manual}"></span>
-      <span class="di-time">${esc(timeLabel(e))}</span>
-      <span class="di-title" title="${esc(e.title)}">${esc(e.title)}</span>
-    </button></li>`).join('') : '<li class="empty-note">No events.</li>');
-  if (dayPanel) dayPanel.classList.remove('hidden');
+      <span class="di-time">${esc(e.time && e.endTime === e.time ? 'Due ' + e.time : timeLabel(e))}</span>
+      <span class="di-title" title="${esc(e.title)}">${esc(label || e.title)}</span>
+    </button></li>`;
+  const rowHtml = (r) => {
+    if (r.event) return itemHtml(r.event);
+    const list = r.study;
+    const name = 'Study: ' + Inbox.shortTitle(blockTask(list[0]));
+    const span = `${list[0].time}-${list[list.length - 1].endTime || list[list.length - 1].time}`;
+    return `<li><details class="day-group"><summary>${esc(name)} · ${list.length} session${list.length === 1 ? '' : 's'} · ${esc(span)}</summary>
+      <ul class="day-list">${list.map((e) => itemHtml(e, `Session ${e.time}-${e.endTime || ''}`)).join('')}</ul></details></li>`;
+  };
+  const SHOWN = 6;
+  const html = rows.slice(0, SHOWN).map(rowHtml).join('') + (rows.length > SHOWN
+    ? `<li><details class="day-group"><summary>+${rows.length - SHOWN} more</summary><ul class="day-list">${rows.slice(SHOWN).map(rowHtml).join('')}</ul></details></li>`
+    : '');
+  setHTML('day-list', html || '<li class="empty-note">No events.</li>');
+  if (dayPanel) showPopup(dayPanel);
 }
 
 // --- Toast ---
@@ -2385,7 +2456,7 @@ async function openSettings() {
 
   renderSettingsLists();
   renderCleanup();
-  settingsModal.classList.remove('hidden');
+  showPopup(settingsModal);
 }
 
 function updateDiscordUI() {
@@ -2857,6 +2928,7 @@ async function init() {
   store.settings.alwaysOnTop = onTop;
   document.getElementById('pin').classList.toggle('active', onTop);
 
+  if (typeof Inbox !== 'undefined' && Inbox.resetBlocksOnce(store, new Date().toISOString())) save();
   initCalendar();
   renderTodos();
   renderEmails();

@@ -109,8 +109,19 @@ function buildAnalystInput(store, analystCache, importantEmails, now = new Date(
     ? store.archived.legacy_canvas
     : null;
   const pool = archived || (store.todos || []).filter((t) => t && t.source === 'canvas');
+  // Ticking a task in the list marks the agent's copy, not the archived Canvas row,
+  // so check both; otherwise finished work keeps coming back as "overdue".
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const finished = new Set();
+  for (const t of store.todos || []) {
+    if (!t || !t.done) continue;
+    if (t.agentTaskId) finished.add('id:' + t.agentTaskId);
+    finished.add('t:' + norm(t.title) + '|' + String(t.due || '').slice(0, 10));
+  }
+  const isFinished = (t) => finished.has('id:' + t.id) || finished.has('id:' + t.dedupeKey) ||
+    finished.has('t:' + norm(t.title) + '|' + String(t.due || '').slice(0, 10));
   const eligible = pool
-    .filter((t) => t && !t.done && t.due && t.status !== 'dismissed' && t.status !== 'suggested' && t.status !== 'filtered')
+    .filter((t) => t && !t.done && !isFinished(t) && t.due && t.status !== 'dismissed' && t.status !== 'suggested' && t.status !== 'filtered')
     .map((t) => {
       const due = String(t.due).slice(0, 10);
       const ev = eventByKey.get(t.dedupeKey) || {};
@@ -189,6 +200,7 @@ function buildCalendar(store, now = new Date(), days = 7) {
   const out = [];
   for (const ev of (store.events || [])) {
     if (ev.status !== 'active' || !ev.time) continue;
+    if (ev.endTime && ev.endTime === ev.time) continue;   // a due time, not busy time
     for (const occ of Recur.occurrences(ev, fromISO, toISO)) {
       const v = occ.view;
       if (!v.time) continue;
@@ -201,6 +213,7 @@ function buildCalendar(store, now = new Date(), days = 7) {
 }
 
 // Gaps between busy blocks inside each day's study hours, starting from now.
+// A dayEnd at or before dayStart ends after midnight; opts.quiet times count as busy.
 function freeWindows(calendar, now = new Date(), opts = {}) {
   const days = opts.days || 7;
   const dayStart = opts.dayStart || '09:00';
@@ -210,8 +223,10 @@ function freeWindows(calendar, now = new Date(), opts = {}) {
   const windows = [];
   for (let i = 0; i < days; i++) {
     const date = localDate(addDays(now, i));
+    for (const q of opts.quiet || []) busy.push([parseStamp(`${date}T${q.start}`), parseStamp(`${date}T${q.end}`)]);
     let cursor = parseStamp(`${date}T${dayStart}`);
-    const end = parseStamp(`${date}T${dayEnd}`);
+    const endDate = dayEnd <= dayStart ? localDate(addDays(parseStamp(`${date}T12:00`), 1)) : date;
+    const end = parseStamp(`${endDate}T${dayEnd}`);
     if (i === 0 && now > cursor) {
       // Round "now" up to the next quarter hour.
       cursor = new Date(Math.ceil(now.getTime() / (15 * 60000)) * 15 * 60000);
