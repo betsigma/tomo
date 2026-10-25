@@ -445,7 +445,7 @@
       const btn = document.getElementById('compact-timer-toggle');
       if (btn) btn.textContent = running ? 'Pause' : 'Start';
     }
-    document.title = show ? `${phase === 'break' ? 'Break' : 'Focus'} ${text} \u00B7 Schedule` : 'Schedule';
+    document.title = show ? `${phase === 'break' ? 'Break' : 'Focus'} ${text} \u00B7 Tomo` : 'Tomo';
   }
   window.focusUpdateChip = focusUpdateChip;
 

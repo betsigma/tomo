@@ -150,7 +150,7 @@ function createWindow() {
     show: false,
     icon: path.join(__dirname, 'build', 'icon.ico'),
     backgroundColor: '#fff3f7',
-    title: 'Schedule',
+    title: 'Tomo',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

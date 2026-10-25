@@ -2074,12 +2074,11 @@ function setView(mode) {
   if (brief) brief.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
   const estimateCard = document.getElementById('estimate-card');
   if (estimateCard) estimateCard.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
-  const teamBtn = document.getElementById('teamBtn');
-  if (teamBtn) teamBtn.classList.toggle('active', mode === 'team');
-
-  const toggle = document.getElementById('viewToggle');
-  toggle.innerHTML = mode === 'expanded' ? '&#9636;' : '&#9638;';
-  toggle.title = mode === 'expanded' ? 'Collapse to summary' : 'Expand to calendar';
+  document.querySelectorAll('.tab').forEach((tab) => {
+    const on = tab.dataset.view === mode;
+    tab.classList.toggle('active', on);
+    if (on) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
+  });
 
   window.widgetAPI.setView(mode);
   save();
@@ -2105,8 +2104,7 @@ function applyTheme() {
   root.classList.remove('theme-light', 'theme-night');
   root.classList.add(mode === 'night' ? 'theme-night' : 'theme-light');
   const btn = document.getElementById('theme');
-  btn.textContent = mode === 'night' ? '\u{1F319}' : '\u2600\uFE0F';
-  btn.title = mode === 'night' ? 'Switch to light' : 'Switch to night';
+  btn.textContent = mode === 'night' ? 'Light mode' : 'Night mode';
 }
 
 // ---------------------------------------------------------------------------
@@ -2564,26 +2562,25 @@ function wireUI() {
     save();
   });
 
-  document.getElementById('viewToggle').addEventListener('click', () => {
-    setView(currentView === 'expanded' ? 'compact' : 'expanded');
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => setView(tab.dataset.view));
   });
 
-  const linksBtn = document.getElementById('linksBtn');
-  if (linksBtn) linksBtn.addEventListener('click', () => {
-    setView(currentView === 'links' ? 'compact' : 'links');
-  });
+  document.getElementById('linksBtn').addEventListener('click', () => setView('links'));
 
-  // Tomato button: open the Focus timer, or go back to the calendar/tasks.
-  const focusBtn = document.getElementById('focusBtn');
-  if (focusBtn) focusBtn.addEventListener('click', () => {
-    console.log('[ui] focus button click; current view =', currentView);
-    setView(currentView === 'focus' ? 'expanded' : 'focus');
+  // The "more" menu: open on click, close on any click elsewhere or on an item.
+  const moreBtn = document.getElementById('moreBtn');
+  const moreMenu = document.getElementById('moreMenu');
+  const setMenu = (open) => {
+    moreMenu.classList.toggle('hidden', !open);
+    moreBtn.setAttribute('aria-expanded', String(open));
+  };
+  moreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setMenu(moreMenu.classList.contains('hidden'));
   });
-
-  const teamBtnClick = document.getElementById('teamBtn');
-  if (teamBtnClick) teamBtnClick.addEventListener('click', () => {
-    setView(currentView === 'team' ? 'compact' : 'team');
-  });
+  document.addEventListener('click', () => setMenu(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
   on('team-run', 'click', () => {
     if (!window.widgetAPI.teamRun) return;
     window.widgetAPI.teamRun().then(applyTeam).catch((err) => console.warn('[team] ' + err.message));

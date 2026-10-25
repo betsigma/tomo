@@ -54,7 +54,7 @@
   --bg:        #fff3f7;   /* light pink background */
   --panel:     #fffafc;   /* cards */
   --text:      #6b2d4f;   /* deep plum (text + thin borders, never black) */
-  --muted:     #a5708f;   /* soft plum for secondary text */
+  --muted:     #8a4f70;   /* soft plum for secondary text (darker = readable on pink) */
   --border:    rgba(107, 45, 79, 0.22);
   --outline:   #6b2d4f;   /* strong plum outline for chips/buttons */
   --accent:    #f8a3c4;   /* main pink */
@@ -87,7 +87,7 @@ html.theme-night {
   --src-manual:#f2dfa0; --src-canvas:#f5a9c9; --src-gmail:#b9adff; --src-discord:#8fb7ff; --src-agent:#ffcf9e;
 }
 html.theme-light {
-  --bg:#fff3f7; --panel:#fffafc; --text:#6b2d4f; --muted:#a5708f;
+  --bg:#fff3f7; --panel:#fffafc; --text:#6b2d4f; --muted:#8a4f70;
   --border:rgba(107,45,79,0.22); --outline:#6b2d4f; --accent:#f8a3c4; --accent-2:#e07aa6;
   --danger:#d9536f; --hover:#ffe3ee; --cal-hover:#ffe9f3; --today:#ffe0ee; --shadow:rgba(107,45,79,0.12);
 }
@@ -137,9 +137,69 @@ html, body {
 }
 html.theme-night .titlebar { background: linear-gradient(180deg, #172741, #0f1b2d); }
 .title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.title-text { font-size: 16px; font-weight: 600; color: var(--text); }
-.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px var(--outline); }
-.controls { display: flex; gap: 4px; }
+.title-text { font-size: 19px; font-weight: 600; color: var(--text); }
+.title-icon { width: 24px; height: 24px; image-rendering: pixelated; }
+.controls { display: flex; gap: 2px; align-items: center; }
+
+/* Line icons inherit the text colour, so night mode just works. */
+.icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn svg, .tab svg {
+  width: 18px; height: 18px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* ---------- MORE MENU ---------- */
+.more { position: relative; -webkit-app-region: no-drag; }
+.more-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 50;
+  min-width: 170px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  box-shadow: 0 8px 20px var(--shadow);
+}
+.menu-item {
+  border: none; background: transparent; color: var(--text);
+  font: inherit; font-weight: 700; font-size: 13px; text-align: left;
+  padding: 8px 10px; border-radius: 10px; cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--hover); outline: none; }
+
+/* ---------- TABS ---------- */
+.tabbar {
+  order: 10;   /* bottom in the small window */
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.tab {
+  border: none; background: transparent; color: var(--muted);
+  font: inherit; font-size: 11px; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 7px 0 6px; cursor: pointer;
+}
+.tab svg { padding: 3px 14px; box-sizing: content-box; border-radius: 999px; transition: background 150ms ease; }
+.tab:hover svg { background: var(--hover); }
+.tab.active { color: var(--text); font-weight: 800; }
+.tab.active svg { background: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--outline); outline-offset: -4px; border-radius: 10px; }
+
+/* Wide window: tabs become a pill row under the title bar. */
+@media (min-width: 600px) {
+  .tabbar {
+    order: 0;
+    display: flex; justify-content: center; gap: 4px;
+    padding: 6px;
+    border-top: none; border-bottom: 1px solid var(--border);
+  }
+  .tab { flex-direction: row; gap: 6px; font-size: 13px; padding: 5px 14px; border-radius: 999px; }
+  .tab svg { width: 16px; height: 16px; padding: 0; }
+  .tab:hover { background: var(--hover); }
+  .tab:hover svg, .tab.active svg { background: transparent; }
+  .tab.active { background: var(--accent); box-shadow: 0 0 0 1px var(--outline); }
+}
 
 /* ---------- BUTTONS ---------- */
 .btn {
