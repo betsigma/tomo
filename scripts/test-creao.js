@@ -1,6 +1,7 @@
 // scripts/test-creao.js
 // ---------------------------------------------------------------------------
-// npm run test:creao [-- --role=ANALYST]       new run per agent (spends credits)
+// npm run test:creao [-- --role=ANALYST]       one agent (spends credits)
+// npm run test:creao -- --only MAIL,DIGEST     those agents only (also --only=MAIL,DIGEST)
 // npm run test:creao -- --recheck              re-read the last test's runs (free)
 //
 // Tests each CONFIGURED agent one at a time with a small sample input and
@@ -19,8 +20,41 @@ const { createClient, ROLES, ROLE_INFO, extractJson, runReply } = require(path.j
 const recheck = process.argv.includes('--recheck');
 const LAST_FILE = path.join(ROOT, 'data', 'creao-last-test.json');
 const lastRuns = (() => { try { return JSON.parse(fs.readFileSync(LAST_FILE, 'utf8')); } catch { return {}; } })();
-const only = (process.argv.find((a) => a.startsWith('--role=')) || '').slice(7).toUpperCase();
 const client = createClient({ rootDir: ROOT, log: () => {} });
+
+// Which agents this invocation should test. --only MAIL,DIGEST (or --only=MAIL,DIGEST)
+// selects that list. --role=ANALYST still selects one. No flag selects every role.
+// Unknown names, a missing value, or both flags together return no roles, so a typo
+// never falls through to a full paid run. Order follows knownRoles, not the flag.
+function selectRoles(argv, knownRoles) {
+  const onlyFlag = argv.find((a) => a === '--only' || a.startsWith('--only='));
+  const roleFlag = argv.find((a) => a.startsWith('--role='));
+  if (onlyFlag && roleFlag) return { roles: [], error: 'Use either --only or --role, not both.' };
+  if (!onlyFlag && !roleFlag) return { roles: knownRoles.slice() };
+
+  let raw = '';
+  if (onlyFlag) {
+    if (onlyFlag.startsWith('--only=')) raw = onlyFlag.slice('--only='.length);
+    else {
+      const next = argv[argv.indexOf('--only') + 1];
+      if (!next || next.startsWith('-')) {
+        return { roles: [], error: `Missing roles after --only. Use one of ${knownRoles.join(', ')}.` };
+      }
+      raw = next;
+    }
+  } else {
+    raw = roleFlag.slice('--role='.length);
+    if (!String(raw).trim()) return { roles: knownRoles.slice() };
+  }
+
+  const names = String(raw).split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+  const unknown = names.filter((n) => !knownRoles.includes(n));
+  if (!names.length || unknown.length) {
+    return { roles: [], error: `Unknown role "${unknown.join(', ') || raw}". Use one of ${knownRoles.join(', ')}.` };
+  }
+  const wanted = new Set(names);
+  return { roles: knownRoles.filter((r) => wanted.has(r)) };
+}
 
 // Keys + types only, a few levels deep. Strings show their length, not content.
 function shape(v, depth = 0) {
@@ -107,9 +141,13 @@ async function testRole(role) {
   }
 }
 
-(async () => {
-  const roles = only ? ROLES.filter((r) => r === only) : ROLES;
-  if (!roles.length) { console.error(`Unknown role "${only}". Use one of ${ROLES.join(', ')}.`); process.exit(2); }
+if (require.main === module) (async () => {
+  const picked = selectRoles(process.argv, ROLES);
+  if (picked.error || !picked.roles.length) {
+    console.error(picked.error || `Unknown role. Use one of ${ROLES.join(', ')}.`);
+    process.exit(2);
+  }
+  const roles = picked.roles;
   if (String(process.env.CREAO_MODE || '').toLowerCase() === 'mock') {
     console.log('Note: CREAO_MODE=mock (the app will use mocks), but configured agents are still tested live here.\n');
   }
@@ -122,3 +160,5 @@ async function testRole(role) {
   for (const r of results) console.log(`  ${r.role.padEnd(8)} ${r.result.padEnd(11)} ${r.note}`);
   if (results.some((r) => r.result === 'FAILED' || r.result === 'BAD OUTPUT')) process.exitCode = 1;
 })();
+
+module.exports = { selectRoles };

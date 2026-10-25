@@ -50,5 +50,14 @@ contextBridge.exposeInMainWorld('widgetAPI', {
   discordStatus: () => ipcRenderer.invoke('discord-status'),
   discordSetConfig: (token, channelId) => ipcRenderer.invoke('discord-set-config', token, channelId),
   discordFetch: (limit) => ipcRenderer.invoke('discord-fetch', limit),
-  discordDisconnect: () => ipcRenderer.invoke('discord-disconnect')
+  discordDisconnect: () => ipcRenderer.invoke('discord-disconnect'),
+
+  // Agent team. State only — no keys, no App IDs.
+  teamState: () => ipcRenderer.invoke('team-state'),
+  teamRun: () => ipcRenderer.invoke('team-run'),
+  onTeamUpdate: (fn) => {
+    const handler = (_e, state) => fn(state);
+    ipcRenderer.on('team-update', handler);
+    return () => ipcRenderer.removeListener('team-update', handler);
+  }
 });

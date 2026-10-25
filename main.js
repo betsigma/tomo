@@ -23,6 +23,8 @@ const { isJunkTitle } = require('./titles');
 const { normalizeDiscordMessage } = require('./discord');
 const llm = require('./llm');
 const { RelevanceModel } = require('./ml');
+const { createClient, geminiAllowed } = require('./creaoClient');
+const { createOrchestrator } = require('./orchestrator');
 
 let mainWindow = null;
 
@@ -170,7 +172,8 @@ const VIEW_SIZES = {
   compact:  { width: 380, height: 560 },
   expanded: { width: 820, height: 660 },
   links:    { width: 820, height: 660 },
-  focus:    { width: 820, height: 660 }
+  focus:    { width: 820, height: 660 },
+  team:     { width: 440, height: 720 }
 };
 
 // ---------------------------------------------------------------------------
@@ -424,10 +427,12 @@ ipcMain.handle('gmail-fetch', async (_e, filters = {}, cache = null, llmReq = nu
     const gmail = google.gmail({ version: 'v1', auth: oauth2 });
 
     const apiKey = decryptSecret(loadSecrets().geminiApiKey);
+    const mailMode = creao.status().roles.find((r) => r.role === 'MAIL').mode;
+    const useGemini = geminiAllowed(!!(llmReq && llmReq.enabled) && !!apiKey, mailMode);
     const ai = {
-      enabled: !!(llmReq && llmReq.enabled) && !!apiKey,
+      enabled: useGemini,
       model: (llmReq && llmReq.model) || llm.DEFAULT_MODEL,
-      apiKey,
+      apiKey: useGemini ? apiKey : null,
       cache: (llmReq && llmReq.cache) || {},
       callModel: llm.callModel
     };
@@ -461,9 +466,7 @@ function logExcluded(list) {
   const lines = list.map((x) => JSON.stringify({ at, keyword: x.keyword, sender: x.sender, subject: x.subject }));
   try {
     ensureDataDir();
-    fs.appendFileSync(EXCLUDED_LOG, lines.join('
-') + '
-', 'utf8');
+    fs.appendFileSync(EXCLUDED_LOG, lines.join('\n') + '\n', 'utf8');
   } catch (err) {
     console.log('[gmail] could not write excluded log:', err.message);
   }
@@ -684,8 +687,34 @@ ipcMain.handle('discord-disconnect', () => {
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
+// CREAO client and the agent team. Results stay in data/agent-team.json.
+// This process only reads store.json; the renderer still owns writes.
+const creao = createClient({ rootDir: __dirname, dataDir: DATA_DIR, log: (m) => console.log(m) });
+function logCreaoStartup() {
+  const s = creao.status();
+  const named = s.roles.filter((r) => r.configured).map((r) => r.role);
+  console.log(`[creao] mode=${s.globalMode} keys=${named.length ? named.join(',') : 'none'}`);
+}
+logCreaoStartup();
+const team = createOrchestrator({
+  client: creao,
+  dataDir: DATA_DIR,
+  loadStore,
+  emit: (state) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('team-update', state);
+  },
+  onExcluded: logExcluded,
+  log: (m) => console.log(m)
+});
+ipcMain.handle('team-state', () => team.getState());
+ipcMain.handle('team-run', () => {
+  team.runTeam('manual', { force: true }).catch((err) => console.log('[team] ' + (err && err.message)));
+  return team.getState();
+});
+
 app.whenReady().then(() => {
   createWindow();
+  team.start();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

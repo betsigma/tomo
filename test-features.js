@@ -517,6 +517,155 @@ checkAsync('creao: JSON in an artifact is downloaded without forwarding the key 
   assert.ok(storageHop && !storageHop.auth, 'no Authorization on the storage hop');
 });
 
+console.log('\n11. test:creao --only selects agents without calling CREAO');
+const { selectRoles } = require('./scripts/test-creao.js');
+const CREAO_ROLES = ['MAIL', 'ANALYST', 'PLANNER', 'DIGEST'];
+
+check('--only MAIL,DIGEST does not select the other agents', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--recheck', '--only', 'MAIL,DIGEST'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, ['MAIL', 'DIGEST']);
+  assert.ok(!picked.error);
+});
+check('--only is case-insensitive and trims spaces', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--only', ' mail, digest '], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, ['MAIL', 'DIGEST']);
+});
+check('--only=DIGEST equals form selects just that agent', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--only=DIGEST'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, ['DIGEST']);
+});
+check('an unknown --only role selects nothing', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--only', 'MAIL,NOPE'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, []);
+  assert.ok(picked.error && picked.error.includes('NOPE'));
+});
+check('duplicate names in --only are tested once', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--only', 'MAIL,MAIL'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, ['MAIL']);
+});
+check('no role flag still selects every agent', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--recheck'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, CREAO_ROLES);
+  assert.ok(!picked.error);
+});
+check('--role=ANALYST still selects only that agent', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--role=ANALYST'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, ['ANALYST']);
+});
+check('--only and --role together select nothing', () => {
+  const picked = selectRoles(['node', 'test-creao.js', '--only', 'MAIL', '--role=DIGEST'], CREAO_ROLES);
+  assert.deepStrictEqual(picked.roles, []);
+  assert.ok(picked.error);
+});
+
+console.log('\n12. Analyst input window, cap, and a failed agent stops the chain');
+const teamInputs = require('./teamInputs.js');
+const { createOrchestrator } = require('./orchestrator.js');
+
+function openTodo(id, due, extra = {}) {
+  return { id, title: id, due, done: false, source: 'canvas', status: 'active', course: 'PHYS', dedupeKey: null, ...extra };
+}
+
+check('Analyst input keeps 3-day overdue and 14-day tasks, and drops the rest', () => {
+  const now = new Date(2026, 9, 24, 12, 0, 0);
+  const store = { events: [], todos: [
+    openTodo('old', '2026-10-20'),
+    openTodo('overdue', '2026-10-21'),
+    openTodo('soon', '2026-10-24'),
+    openTodo('far', '2026-11-07'),
+    openTodo('too-far', '2026-11-08'),
+    openTodo('done-one', '2026-10-25', { done: true }),
+    openTodo('gone', '2026-10-25', { status: 'dismissed' }),
+    openTodo('manual', '2026-10-25', { source: 'manual', status: undefined })
+  ] };
+  const built = teamInputs.buildAnalystInput(store, {}, [], now);
+  const ids = built.input.tasks.map((t) => t.id);
+  assert.deepStrictEqual(ids, ['overdue', 'soon', 'manual', 'far']);
+  assert.strictEqual(built.sent, 4);
+  assert.strictEqual(built.eligible, 4);
+});
+
+check('Analyst input caps at 30 and reports sent of eligible', () => {
+  const now = new Date(2026, 9, 24, 12, 0, 0);
+  const todos = [];
+  for (let i = 0; i < 31; i++) todos.push(openTodo('t' + i, '2026-10-24'));
+  const built = teamInputs.buildAnalystInput({ events: [], todos }, {}, [], now);
+  assert.strictEqual(built.eligible, 31);
+  assert.strictEqual(built.sent, 30);
+  assert.strictEqual(built.input.tasks.length, 30);
+  assert.strictEqual(built.input.tasks[0].id, 't0');
+  assert.strictEqual(built.input.tasks.some((t) => t.id === 't30'), false);
+});
+
+check('Gemini is not called while the Mail Scanner is live', () => {
+  assert.strictEqual(creao.geminiAllowed(true, 'live'), false);
+  assert.strictEqual(creao.geminiAllowed(true, 'mock'), true);
+  assert.strictEqual(creao.geminiAllowed(false, 'mock'), false);
+});
+
+function fakeTeamClient(byRole) {
+  const calls = [];
+  const roles = ['MAIL', 'ANALYST', 'PLANNER', 'DIGEST'];
+  return {
+    calls,
+    status() {
+      return {
+        globalMode: 'live', maxRunsPerHour: 4,
+        roles: roles.map((role) => ({ role, name: role, mode: 'live', configured: true, runsLastHour: 0 }))
+      };
+    },
+    async run(role, input, opts) {
+      calls.push({ role, force: !!(opts && opts.force) });
+      if (!byRole[role]) throw new Error('should not run ' + role);
+      return byRole[role];
+    }
+  };
+}
+
+checkAsync('a failed agent stops the chain, keeps earlier results, and does not throw', async () => {
+  const dir = tmpData();
+  const client = fakeTeamClient({
+    MAIL: { ok: true, source: 'live', output: { important_emails: [], events: [{ title: 'Aid', date: '2026-10-25', source_subject: 'Aid' }] } },
+    ANALYST: { ok: false, source: 'mock', stale: true, error: 'bad output', output: { tasks: [], crunch_weeks: [] } }
+  });
+  const orch = createOrchestrator({
+    client, dataDir: dir, loadStore: () => ({ todos: [], events: [], settings: {} }),
+    emit: () => {}, log: () => {}, now: () => new Date(2026, 9, 24, 12, 0, 0)
+  });
+  let state;
+  try { state = await orch.runTeam('manual', { force: true }); }
+  finally { orch.stop(); }
+  assert.deepStrictEqual(client.calls.map((c) => c.role), ['MAIL', 'ANALYST']);
+  assert.strictEqual(client.calls[0].force, true);
+  assert.strictEqual(state.nodes.MAIL.status, 'done');
+  assert.strictEqual(state.nodes.ANALYST.status, 'error');
+  assert.strictEqual(state.nodes.PLANNER.status, 'idle');
+  assert.strictEqual(state.nodes.DIGEST.status, 'idle');
+  assert.strictEqual(state.outputs.MAIL.events.length, 1);
+  assert.strictEqual(state.running, false);
+});
+
+checkAsync('a full run records how many tasks were sent', async () => {
+  const dir = tmpData();
+  const client = fakeTeamClient({
+    MAIL: { ok: true, source: 'live', output: { important_emails: [], events: [] } },
+    ANALYST: { ok: true, source: 'live', output: { tasks: [], crunch_weeks: [] } },
+    PLANNER: { ok: true, source: 'mock', output: { proposals: [], adjustment_note: '' } },
+    DIGEST: { ok: true, source: 'mock', output: { morning_brief: 'Do the lab.', team_digest: ['a', 'b', 'c'] } }
+  });
+  const orch = createOrchestrator({
+    client, dataDir: dir,
+    loadStore: () => ({ events: [], settings: {}, todos: [openTodo('lab', '2026-10-24'), openTodo('old', '2026-10-01')] }),
+    emit: () => {}, log: () => {}, now: () => new Date(2026, 9, 24, 12, 0, 0)
+  });
+  let state;
+  try { state = await orch.runTeam('schedule'); }
+  finally { orch.stop(); }
+  assert.strictEqual(client.calls.every((c) => c.force === false), true);
+  assert.deepStrictEqual(state.analystSent, { sent: 1, eligible: 1 });
+  assert.ok(String(state.nodes.ANALYST.handoff).includes('sent 1 of 1'));
+});
+
 // Run the async checks, then print the summary.
 (async () => {
   for (const { name, fn } of asyncChecks) {

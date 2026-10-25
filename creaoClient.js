@@ -399,7 +399,14 @@ function createClient(opts = {}) {
   return { run, status, lastOutput, modeOf, configured, toInputs, runLive, getRun, outputFromRun, checkOutput, loadMock };
 }
 
+// The local Gmail path still runs. Gemini is the only call this turns off,
+// and only while the Mail Scanner itself is live.
+function geminiAllowed(checkboxOn, mailMode) {
+  if (mailMode === 'live') return false;
+  return !!checkboxOn;
+}
+
 module.exports = {
-  createClient, ROLES, ROLE_INFO, BASE_URL,
+  createClient, ROLES, ROLE_INFO, BASE_URL, geminiAllowed,
   extractJson, runReply, normalizeMail, resolveMockTokens, stableStringify, hashOf
 };

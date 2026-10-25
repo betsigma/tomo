@@ -35,6 +35,7 @@
         <button id="viewToggle" class="btn" title="Expand to calendar">&#9638;</button>
         <button id="linksBtn" class="btn" title="Links &amp; details">&#128279;</button>
         <button id="focusBtn" class="btn" title="Focus timer">&#127813;</button>
+        <button id="teamBtn" class="btn" title="Agent team">&#10024;</button>
         <button id="settingsBtn" class="btn" title="Settings">&#9881;</button>
         <button id="pin"   class="btn" title="Toggle always-on-top">&#128204;</button>
         <button id="theme" class="btn" title="Toggle light / dark">&#127769;</button>
@@ -45,6 +46,8 @@
 
     <!-- ================= BODY ================= -->
     <main class="body">
+
+      <div id="morning-brief" class="morning-brief hidden"></div>
 
       <!-- ---------- COMPACT VIEW: today's tasks + next 3 deadlines ---------- -->
       <section id="view-compact" class="view">
@@ -110,6 +113,20 @@
         <div id="link-chips" class="chips"></div>
 
         <ul id="link-list" class="link-list"></ul>
+      </section>
+
+      <!-- ---------- AGENT TEAM: org chart, pending proposals (not on the calendar) ---------- -->
+      <section id="view-team" class="view hidden">
+        <div class="team-head">
+          <h3 class="section-title">Agent team</h3>
+          <button id="team-run" class="btn small primary" type="button">Run team</button>
+        </div>
+        <p id="team-schedule" class="hint">Not run yet</p>
+        <p id="team-loading" class="team-loading hidden">The team is working&hellip;</p>
+        <div id="team-chart" class="team-chart"></div>
+        <h3 class="section-title">Pending</h3>
+        <p class="hint">Proposals wait here. They are not on the calendar yet.</p>
+        <ul id="team-pending" class="pending-list"></ul>
       </section>
 
       <!-- ---------- FOCUS VIEW: the original patmodoro app, embedded ---------- -->
@@ -320,6 +337,7 @@
             Emails from trusted senders are sent to Google. On the free tier,
             Google may use them to improve its products.
           </p>
+          <p id="llm-live-note" class="hint hidden">Mail Scanner is live, so these emails are not sent to Google.</p>
           <div class="row">
             <span id="llm-status" class="hint">Checking&hellip;</span>
             <span class="spacer"></span>

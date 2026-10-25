@@ -207,6 +207,98 @@ async function load() {
 // ---------------------------------------------------------------------------
 // 4. To-do list
 // ---------------------------------------------------------------------------
+let teamState = null;
+
+function taskSummary(id) {
+  const tasks = teamState && teamState.outputs && teamState.outputs.ANALYST && teamState.outputs.ANALYST.tasks;
+  const hit = (tasks || []).find((t) => t && t.id === id);
+  return hit && hit.summary ? String(hit.summary) : '';
+}
+
+function shortWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function mailScannerLive() {
+  return !!(teamState && teamState.nodes && teamState.nodes.MAIL && teamState.nodes.MAIL.mode === 'live');
+}
+
+function updateGeminiControls() {
+  if (!llmEnabled) return;
+  const live = mailScannerLive();
+  const note = document.getElementById('llm-live-note');
+  if (note) note.classList.toggle('hidden', !live);
+  llmEnabled.disabled = live;
+  if (live) llmEnabled.checked = false;
+  else llmEnabled.checked = !!(store.settings.llm && store.settings.llm.enabled);
+}
+
+function renderMorningBrief() {
+  const el = document.getElementById('morning-brief');
+  if (!el) return;
+  const text = teamState && teamState.outputs && teamState.outputs.DIGEST && teamState.outputs.DIGEST.morning_brief;
+  const brief = String(text || '').trim();
+  el.classList.toggle('hidden', !brief);
+  el.innerHTML = brief ? `<strong>Morning brief</strong>${esc(brief)}` : '';
+}
+
+function renderTeam() {
+  const chart = document.getElementById('team-chart');
+  if (!chart) return;
+  const state = teamState;
+  const loading = document.getElementById('team-loading');
+  const runBtn = document.getElementById('team-run');
+  if (!state) {
+    chart.innerHTML = '<p class="hint">The team has not reported in yet.</p>';
+    return;
+  }
+  if (loading) loading.classList.toggle('hidden', !state.running);
+  if (runBtn) runBtn.disabled = !!state.running;
+  const last = state.lastRun && state.lastRun.at ? 'Last run ' + shortWhen(state.lastRun.at) : 'Not run yet';
+  const next = state.nextRunAt ? ' · next ' + shortWhen(state.nextRunAt) : '';
+  setText('team-schedule', last + next);
+
+  const order = state.order || [];
+  chart.innerHTML = order.map((role, i) => {
+    const node = (state.nodes && state.nodes[role]) || {};
+    const status = node.status || 'idle';
+    const sent = role === 'ANALYST' && state.analystSent
+      ? `<div class="team-sent">sent ${state.analystSent.sent} of ${state.analystSent.eligible}</div>` : '';
+    const when = node.at ? `<div class="team-meta">${esc(shortWhen(node.at))}${node.cached ? ' · cached' : ''}</div>` : '';
+    const err = node.error ? `<div class="team-error">${esc(node.error)}</div>` : '';
+    const arrow = i < order.length - 1
+      ? `<div class="team-arrow">&#8595; ${esc(node.handoff || '')}</div>` : '';
+    return `<article class="team-node is-${esc(status)}">
+      <div class="team-node-top"><span class="team-name">${esc(node.name || role)}</span><span class="team-status ${esc(status)}">${esc(status)}</span></div>
+      ${when}${sent}${err}
+    </article>${arrow}`;
+  }).join('');
+
+  const pending = document.getElementById('team-pending');
+  if (!pending) return;
+  const proposals = (state.outputs && state.outputs.PLANNER && state.outputs.PLANNER.proposals) || [];
+  const mailEvents = (state.outputs && state.outputs.MAIL && state.outputs.MAIL.events) || [];
+  const items = [];
+  for (const p of proposals) {
+    items.push(`<li class="pending-item"><div class="pending-title">${esc(p.title || 'Study block')}</div><div class="pending-meta">${esc(p.start || '')} – ${esc(p.end || '')}</div><div class="pending-reason">${esc(p.reason || '')}</div></li>`);
+  }
+  for (const ev of mailEvents) {
+    items.push(`<li class="pending-item"><div class="pending-title">${esc(ev.title || 'Email date')}</div><div class="pending-meta">${esc(ev.date || '')}${ev.location ? ' · ' + esc(ev.location) : ''}</div></li>`);
+  }
+  pending.innerHTML = items.length ? items.join('') : '<li class="empty-note">Nothing waiting yet.</li>';
+}
+
+function applyTeam(state) {
+  teamState = state || null;
+  renderMorningBrief();
+  renderTeam();
+  renderTodos();
+  updateGeminiControls();
+}
+
 function todoRow(t, dueIso) {
   const due = dueIso !== undefined ? dueIso : localDateOf(t.due);
   const today = todayStr();
@@ -220,12 +312,15 @@ function todoRow(t, dueIso) {
   const pomo = t.pomodoros ? `<span class="todo-pomo" title="${t.pomodoros} pomodoro${t.pomodoros === 1 ? '' : 's'} completed">&#127813; ${t.pomodoros}</span>` : '';
   const meta = due ? `<span class="todo-meta">${esc(formatDue(t.due, t.time))}</span>` : '';
   const sub = (loc || course || pomo || meta) ? `<span class="todo-sub">${loc}${course}${pomo}${meta}</span>` : '';
+  const summary = taskSummary(t.id);
+  const summaryHtml = summary ? `<span class="todo-summary">${esc(summary)}</span>` : '';
   return `
     <li class="${cls}">
       ${dot}
       <input type="checkbox" data-action="toggle" data-id="${t.id}" ${t.done ? 'checked' : ''} />
       <span class="todo-body">
         <span class="todo-text clickable" data-action="open-todo" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</span>
+        ${summaryHtml}
         ${sub}
       </span>
       <button class="del" data-action="delete-todo" data-id="${t.id}" title="Delete">&#10005;</button>
@@ -1654,6 +1749,12 @@ function setView(mode) {
   if (linksView) linksView.classList.toggle('hidden', mode !== 'links');
   const focusView = document.getElementById('view-focus');
   if (focusView) focusView.classList.toggle('hidden', mode !== 'focus');
+  const teamView = document.getElementById('view-team');
+  if (teamView) teamView.classList.toggle('hidden', mode !== 'team');
+  const brief = document.getElementById('morning-brief');
+  if (brief) brief.classList.toggle('brief-suppressed', mode === 'focus' || mode === 'links');
+  const teamBtn = document.getElementById('teamBtn');
+  if (teamBtn) teamBtn.classList.toggle('active', mode === 'team');
 
   const toggle = document.getElementById('viewToggle');
   toggle.innerHTML = mode === 'expanded' ? '&#9636;' : '&#9638;';
@@ -1667,6 +1768,7 @@ function setView(mode) {
     if (typeof focusUpdateChip === 'function') focusUpdateChip();
     if (typeof focusRefreshPicker === 'function') focusRefreshPicker();
   }
+  if (mode === 'team') renderTeam();
 }
 
 function applyTheme() {
@@ -1791,6 +1893,7 @@ async function openSettings() {
   if (llmModel) llmModel.value = lcfg.model || lstat.defaultModel || 'gemini-2.5-flash-lite';
   if (llmKey) llmKey.value = '';
   setText('llm-status', lstat.hasKey ? 'API key saved' : 'No API key yet');
+  updateGeminiControls();
   toggleHidden('llm-test-output', true);
 
   // Learned relevance filter (on-device).
@@ -2119,6 +2222,15 @@ function wireUI() {
     setView(currentView === 'focus' ? 'expanded' : 'focus');
   });
 
+  const teamBtnClick = document.getElementById('teamBtn');
+  if (teamBtnClick) teamBtnClick.addEventListener('click', () => {
+    setView(currentView === 'team' ? 'compact' : 'team');
+  });
+  on('team-run', 'click', () => {
+    if (!window.widgetAPI.teamRun) return;
+    window.widgetAPI.teamRun().then(applyTeam).catch((err) => console.warn('[team] ' + err.message));
+  });
+
   // Repeats controls: show/hide the weekday and "Ends" options.
   if (evRepeat) evRepeat.addEventListener('change', syncRepeatVisibility);
   if (evEnd) evEnd.addEventListener('change', syncRepeatVisibility);
@@ -2193,6 +2305,11 @@ async function init() {
   renderDiscord();
   renderLinks();
   setView(store.settings.viewMode || 'compact');
+  if (window.widgetAPI.onTeamUpdate) window.widgetAPI.onTeamUpdate(applyTeam);
+  if (window.widgetAPI.teamState) {
+    try { applyTeam(await window.widgetAPI.teamState()); }
+    catch (err) { console.warn('[team] ' + err.message); }
+  }
 
   // Canvas: if connected, pull fresh data in the background.
   const st = await window.widgetAPI.canvasStatus();
